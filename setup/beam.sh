@@ -44,9 +44,10 @@ start_tunnel() {
     echo "$name tunnel already running (PID $(cat "$pid_file"))."
     return
   fi
-  nohup setsid "$BIN" \
-    --username "$BEAM_USERNAME" --api-key "$BEAM_API_KEY" \
-    --server "$BEAM_DOMAIN" --server-port "$BEAM_CONTROL_PORT" --debug --undead \
+  nohup setsid env \
+    BEAM_USERNAME="$BEAM_USERNAME" BEAM_API_KEY="$BEAM_API_KEY" \
+    BEAM_DOMAIN="$BEAM_DOMAIN" BEAM_CONTROL_PORT="$BEAM_CONTROL_PORT" \
+    "$BIN" --debug --undead \
     "$local_port:me" "up:$remote_port" \
     </dev/null >"$LOG_DIR/beam-$name.log" 2>&1 &
   echo "$!" > "$pid_file"
