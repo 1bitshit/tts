@@ -398,7 +398,7 @@ Generate speech using preset speakers with emotional control and style instructi
 
 ![Custom Voice Demo](docs/images/demo_custom_voice.png)
 
-### Voice Design Tab  
+### Voice Design Tab
 Create custom voices using natural language descriptions.
 
 ![Voice Design Demo](docs/images/demo_voice_design.png)
@@ -717,10 +717,10 @@ response = requests.post(
 if response.status_code == 200:
     result = response.json()
     audio_data = base64.b64decode(result["audio"])
-    
+
     with open("output.wav", "wb") as f:
         f.write(audio_data)
-    
+
     print(f"Audio saved! Sample rate: {result['sample_rate']} Hz")
 else:
     print(f"Error: {response.status_code} - {response.text}")

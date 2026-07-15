@@ -1,0 +1,110 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# Environment variables
+.env
+.env.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Models and cache
+.cache/
+**/.cache/
+models/
+model-cache/
+checkpoints/
+huggingface/
+**/huggingface/hub/
+**/huggingface/xet/
+*.safetensors
+*.gguf
+*.ckpt
+*.pt
+*.pth
+*.bin
+
+# Logs
+*.log
+logs/
+
+# Testing
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Output files
+output/
+outputs/
+generated/
+uploads/
+archive/
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+
+# MacOS
+.DS_Store
+
+# Docker
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+app/models/hub
+app/models/xet
+
+# Frontend dependencies and builds
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Runtime databases and state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.pid
+
+# Accidental pip/redirection artifacts
+=[0-9]*
+
+# SSL certificates
+certs/
+*.pem
+*.key
