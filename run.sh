@@ -25,6 +25,7 @@ OPTIONS:
     --setup         Setup mode: install dependencies (useful for first run)
     --docker        Run with Docker Compose
     --dev           Development mode: enable auto-reload
+    --with-lms      Start LM Studio plus authenticated API proxy
 
 EXAMPLES:
     # Quick start (auto-detects conda environment)
@@ -64,6 +65,7 @@ USE_SSL=false
 SETUP_MODE=false
 DOCKER_MODE=false
 DEV_MODE=false
+WITH_LMS=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -85,6 +87,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dev)
             DEV_MODE=true
+            shift
+            ;;
+        --with-lms)
+            WITH_LMS=true
             shift
             ;;
         *)
@@ -286,6 +292,11 @@ fi
 # Activate Environment
 # ==============================================================================
 activate_environment
+
+if [ "$WITH_LMS" = true ]; then
+    echo "🧠 Starting LM Studio and shared-key proxy..."
+    bash "$SCRIPT_DIR/setup/lmstudio.sh" start
+fi
 
 # ==============================================================================
 # Frontend Build (ensure latest React app is served)

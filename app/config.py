@@ -46,6 +46,13 @@ class Settings(BaseSettings):
         description="Comma-separated list of allowed CORS origins (use '*' for all)"
     )
 
+    # LM Studio / llmster. The upstream stays loopback-only; lms_proxy exposes
+    # it with the same API_KEYS used by the TTS API.
+    lm_studio_internal_host: str = Field(default="127.0.0.1")
+    lm_studio_internal_port: int = Field(default=1234)
+    lm_studio_proxy_host: str = Field(default="0.0.0.0")
+    lm_studio_proxy_port: int = Field(default=1235)
+
     # SSL/HTTPS Configuration
     ssl_enabled: bool = Field(
         default=False,

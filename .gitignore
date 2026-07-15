@@ -57,6 +57,7 @@ huggingface/
 # Logs
 *.log
 logs/
+.runtime/
 
 # Testing
 .ipynb_checkpoints/

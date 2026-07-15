@@ -6,18 +6,25 @@ import json
 import logging
 import httpx
 from typing import AsyncGenerator, List, Optional
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "http://localhost:1234/v1"
 DEFAULT_TIMEOUT = 120.0
 
 
 class LMStudioClient:
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, timeout: float = DEFAULT_TIMEOUT):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT):
+        self.base_url = (base_url or self.default_base_url()).rstrip("/")
         self.timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
+
+    @staticmethod
+    def default_base_url() -> str:
+        return (
+            f"http://{settings.lm_studio_internal_host}:"
+            f"{settings.lm_studio_internal_port}/v1"
+        )
 
     async def ensure_client(self):
         if self._client is None:

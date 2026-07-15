@@ -198,6 +198,48 @@ docker run -d --gpus all -p 8000:8000 \
 
 > **Tip:** To disable authentication entirely (e.g. for local development), leave `API_KEYS` empty or unset.
 
+### LM Studio with the same API keys
+
+This repository can install and run headless LM Studio (`llmster`) together
+with an authenticated proxy. LM Studio remains bound to
+`127.0.0.1:1234`; clients use the separately configurable proxy on port
+`1235`. The proxy validates the same comma-separated `API_KEYS` as Qwen TTS.
+
+```bash
+cp .env.example .env
+# Set API_KEYS in .env, then:
+./setup/lmstudio.sh start
+./setup/lmstudio.sh status
+```
+
+Start Qwen TTS and LM Studio together:
+
+```bash
+./run.sh --with-lms
+```
+
+Both common authentication styles are supported:
+
+```bash
+curl -H "X-API-Key: $KEY" http://127.0.0.1:1235/v1/models
+curl -H "Authorization: Bearer $KEY" http://127.0.0.1:1235/v1/models
+```
+
+Configuration:
+
+```dotenv
+API_KEYS=the-same-key-for-tts-and-lms
+LM_STUDIO_INTERNAL_HOST=127.0.0.1
+LM_STUDIO_INTERNAL_PORT=1234
+LM_STUDIO_PROXY_HOST=0.0.0.0
+LM_STUDIO_PROXY_PORT=1235
+LM_STUDIO_MODEL=
+LM_STUDIO_DOWNLOAD_MODEL=false
+```
+
+Use `./setup/lmstudio.sh stop` or `restart` to manage both processes. In
+production, startup fails securely when `API_KEYS` is empty.
+
 ### Step 2: Start the Server
 
 **Local (using run script):**
