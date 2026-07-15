@@ -19,6 +19,7 @@ export function StoryTab() {
   const [story, setStory] = useState<StoryState | null>(null);
   const [saved, setSaved] = useState<Array<{ session_id: string; title: string; status: string; message_count: number; updated_at: string }>>([]);
   const [busy, setBusy] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const streamRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -33,7 +34,10 @@ export function StoryTab() {
   const connectStream = (id: string) => {
     streamRef.current?.abort();
     streamRef.current = storyApi.streamStory(id, (event, data) => {
-      if (event === 'status') setStory((current) => current ? { ...current, status: data.status } : current);
+      if (event === 'status') {
+        setStory((current) => current ? { ...current, status: data.status } : current);
+        if (['finished', 'stopped', 'disconnected'].includes(data.status)) setIsGenerating(false);
+      }
       if (event === 'message') {
         setStory((current) => current ? {
           ...current,
@@ -51,7 +55,7 @@ export function StoryTab() {
           text: '[Schreibt weiter …]', audio_base64: null, timestamp: '', scene: data.scene,
         }],
       } : current);
-      if (event === 'error') toast.showToast(data.message || 'Story-Fehler', 'error');
+      if (event === 'error') { setIsGenerating(false); toast.showToast(data.message || 'Story-Fehler', 'error'); }
     });
   };
 
@@ -68,15 +72,19 @@ export function StoryTab() {
 
   const start = async () => {
     if (!story) return;
+    setIsGenerating(true);
+    setProgress({ percent: 1, label: 'Story-Modell wird gestartet' });
+    setStory({ ...story, status: 'running' });
     connectStream(story.session_id);
     try { await storyApi.startStory(story.session_id, apiKey); }
-    catch (error) { streamRef.current?.abort(); toast.showToast((error as Error).message, 'error'); }
+    catch (error) { setIsGenerating(false); streamRef.current?.abort(); toast.showToast((error as Error).message, 'error'); }
   };
 
   const stop = async () => {
     if (!story) return;
     await storyApi.stopStory(story.session_id, apiKey);
     streamRef.current?.abort();
+    setIsGenerating(false);
     setStory({ ...story, status: 'stopped' });
     await refreshSaved();
   };
@@ -103,9 +111,9 @@ export function StoryTab() {
         <option value="live">Live-Streaming – Beiträge sofort anzeigen und abspielen</option>
         <option value="prerecorded">Vorproduziert – erzeugen und später abspielen</option>
       </select>
-      {(busy || story?.status === 'running') && <div className="mt-md">
+      {(busy || isGenerating) && <div className="mt-md" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}>
         <div className="flex justify-between text-xs text-text-secondary mb-xs"><span>{progress.label}</span><span>{progress.percent}%</span></div>
-        <div className="h-2 rounded bg-bg-surface overflow-hidden"><div className="h-full bg-accent-cyan transition-all duration-300" style={{ width: `${progress.percent}%` }} /></div>
+        <div className="h-3 rounded bg-bg-surface border border-border-subtle overflow-hidden"><div className="h-full bg-accent-cyan transition-all duration-300" style={{ width: `${Math.max(progress.percent, 2)}%` }} /></div>
       </div>}
       <div className="flex gap-sm mt-md flex-wrap">
         {!story && <Button onClick={create} isLoading={busy} icon={Save}>Neue Geschichte</Button>}

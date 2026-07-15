@@ -229,12 +229,12 @@ async def _story_loop(session_id: str):
             total_turns = session["max_scenes"] * len(characters)
             completed_turns = session["current_scene"] * len(characters) + index
             await queue.put({"event": "progress", "data": {
-                "percent": round(completed_turns / total_turns * 100),
+                "percent": max(1, round(completed_turns / total_turns * 100)),
                 "label": f"Text für {character.name} wird erzeugt",
             }})
             message = await _generate_turn(session, character, scene)
             await queue.put({"event": "progress", "data": {
-                "percent": round((completed_turns + 0.8) / total_turns * 100),
+                "percent": max(1, round((completed_turns + 0.8) / total_turns * 100)),
                 "label": f"Stimme für {character.name} ist fertig",
             }})
             session["messages"].append(StoryMessage(**message))
