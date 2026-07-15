@@ -145,6 +145,9 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        # .env is shared by the Python API and shell-managed sidecars such as
+        # LM Studio and Beam. Their variables must not prevent API startup.
+        extra = "ignore"
 
     def get_api_keys_list(self) -> List[str]:
         """Parse API keys from comma-separated string"""
