@@ -151,25 +151,26 @@ async def _tts_speech(
 ) -> Optional[str]:
     try:
         if voice_prompt_id:
-            base_model = model_manager.get_base_model()
             prompt = get_voice_clone_prompt(voice_prompt_id)
             if not prompt:
                 logger.warning(f"Voice prompt {voice_prompt_id} not found, falling back to VoiceDesign")
                 return await _tts_speech_design(text, voice_desc, language)
 
-            def _generate(instruct: str, segment_text: str, **kw) -> tuple:
-                return base_model.generate_voice_clone(
-                    text=f"{instruct} {segment_text}".strip() if instruct else segment_text,
-                    language=language,
-                    voice_clone_prompt=prompt,
+            def _render_clone():
+                base_model = model_manager.get_base_model()
+
+                def _generate(instruct: str, segment_text: str, **kw) -> tuple:
+                    return base_model.generate_voice_clone(
+                        text=f"{instruct} {segment_text}".strip() if instruct else segment_text,
+                        language=language,
+                        voice_clone_prompt=prompt,
+                    )
+
+                return generate_with_emotion_tags(
+                    text=text, generate_func=_generate, base_instruct=voice_desc, sr=24000,
                 )
 
-            audio, sr = generate_with_emotion_tags(
-                text=text,
-                generate_func=_generate,
-                base_instruct=voice_desc,
-                sr=24000,
-            )
+            audio, sr = await asyncio.to_thread(_render_clone)
         else:
             return await _tts_speech_design(text, voice_desc, language)
 
@@ -184,21 +185,21 @@ async def _tts_speech(
 
 async def _tts_speech_design(text: str, voice_desc: str, language: str) -> Optional[str]:
     try:
-        model = model_manager.get_voice_design_model()
+        def _render_design():
+            model = model_manager.get_voice_design_model()
 
-        def _generate(instruct: str, segment_text: str, **kw) -> tuple:
-            return model.generate_voice_design(
-                text=segment_text,
-                language=language,
-                instruct=instruct or voice_desc,
+            def _generate(instruct: str, segment_text: str, **kw) -> tuple:
+                return model.generate_voice_design(
+                    text=segment_text,
+                    language=language,
+                    instruct=instruct or voice_desc,
+                )
+
+            return generate_with_emotion_tags(
+                text=text, generate_func=_generate, base_instruct=voice_desc, sr=24000,
             )
 
-        audio, sr = generate_with_emotion_tags(
-            text=text,
-            generate_func=_generate,
-            base_instruct=voice_desc,
-            sr=24000,
-        )
+        audio, sr = await asyncio.to_thread(_render_design)
         import base64, io, soundfile as sf
         buf = io.BytesIO()
         sf.write(buf, audio, sr, format="wav")
@@ -210,24 +211,19 @@ async def _tts_speech_design(text: str, voice_desc: str, language: str) -> Optio
 
 async def _create_speaker_voice_prompt(speaker: SpeakerConfig) -> str:
     try:
-        design_model = model_manager.get_voice_design_model()
-        ref_text = (
-            "Hello, I'm here to present my arguments in this debate. "
-            "I believe logical reasoning and evidence are the foundations of a good argument."
-        )
-        ref_wavs, sr = design_model.generate_voice_design(
-            text=ref_text,
-            language=speaker.language or "English",
-            instruct=speaker.voice_description,
-        )
-        ref_wav = ref_wavs[0]
+        def _prepare_voice():
+            design_model = model_manager.get_voice_design_model()
+            ref_text = "Guten Tag. Ich erzähle mit klarer Stimme und natürlicher Betonung."
+            ref_wavs, sr = design_model.generate_voice_design(
+                text=ref_text, language=speaker.language or "German",
+                instruct=speaker.voice_description,
+            )
+            base_model = model_manager.get_base_model()
+            return base_model.create_voice_clone_prompt(
+                ref_audio=(ref_wavs[0], sr), ref_text=ref_text, x_vector_only_mode=True,
+            )
 
-        base_model = model_manager.get_base_model()
-        prompt = base_model.create_voice_clone_prompt(
-            ref_audio=(ref_wav, sr),
-            ref_text=ref_text,
-            x_vector_only_mode=True,
-        )
+        prompt = await asyncio.to_thread(_prepare_voice)
         import uuid as _uuid
         prompt_id = str(_uuid.uuid4())[:8]
         store_voice_clone_prompt(prompt_id, prompt)

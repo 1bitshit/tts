@@ -232,7 +232,7 @@ async def _story_loop(session_id: str):
                 "percent": max(1, round(completed_turns / total_turns * 100)),
                 "label": f"Text für {character.name} wird erzeugt",
             }})
-            message = await _generate_turn(session, character, scene)
+            message = await _generate_turn(session, character, scene, queue)
             await queue.put({"event": "progress", "data": {
                 "percent": max(1, round((completed_turns + 0.8) / total_turns * 100)),
                 "label": f"Stimme für {character.name} ist fertig",
@@ -267,7 +267,10 @@ async def _story_loop(session_id: str):
         await queue.put(None)
 
 
-async def _generate_turn(session: dict, character: StoryCharacter, scene: int) -> dict:
+async def _generate_turn(
+    session: dict, character: StoryCharacter, scene: int,
+    progress_queue: asyncio.Queue | None = None,
+) -> dict:
     recent = session["messages"][-14:]
     query = " ".join(message.text for message in recent[-4:]) or session["premise"]
     memories = retrieve_memories(session["session_id"], query, limit=5)
@@ -276,14 +279,24 @@ async def _generate_turn(session: dict, character: StoryCharacter, scene: int) -
         for member in session["characters"]
     )
     memory_block = "\n".join(f"- {memory}" for memory in memories) or "- Noch keine Langzeiterinnerungen."
-    system = f"""Du schreibst eine fortlaufende deutsche {session['genre']}-Geschichte.
+    is_narrator = character.id == "narrator" or character.role.lower() == "erzählerin"
+    role_rules = (
+        "Die Erzählerin beschreibt alles in der dritten Person. Sie ist niemals selbst Figur, "
+        "sagt niemals 'ich' und spricht nicht stellvertretend für Mara oder Elias. Sie schildert "
+        "sichtbare, konkrete Sims-artige Alltagshandlungen, Orte, Gegenstände, Bedürfnisse und Folgen."
+        if is_narrator else
+        f"{character.name} handelt nur als eigene Figur. Beschreibe eine konkrete Handlung und "
+        "natürlichen Dialog; kontrolliere oder vertone keine andere Figur und nicht die Erzählerin."
+    )
+    system = f"""Du schreibst eine fortlaufende deutsche {session['genre']}-Geschichte wie eine lebendige Sims-Simulation.
 Titel: {session['title']}
 Prämisse: {session['premise']}
 Figuren:
 {cast}
 
-Du schreibst jetzt ausschließlich als {character.name} ({character.role}).
+Aktueller Beitrag: {character.name} ({character.role}).
 Rollenprofil: {character.personality}
+Rollenregeln: {role_rules}
 
 RAG-Erinnerungen aus früheren Szenen:
 {memory_block}
@@ -293,13 +306,23 @@ Regeln:
 - Erfinde pro Beitrag eine neue konkrete Entwicklung.
 - Wiederhole weder Formulierungen noch bereits erzählte Ereignisse aus den RAG-Erinnerungen.
 - Verrate nicht den gesamten Plot und beende die Geschichte nicht vorzeitig.
-- 2 bis 5 Absätze, vollständig auf Deutsch.
-- Erzählerin beschreibt Szene und Übergänge; Figuren handeln und sprechen aus ihrer Perspektive.
+- 1 bis 3 kurze Absätze, vollständig auf Deutsch.
+- Jede Runde enthält eine greifbare Handlung, zum Beispiel Kaffee kochen, etwas suchen, essen, aufräumen, arbeiten, streiten oder einen Raum verlassen.
+- Erzählerin beschreibt nur in dritter Person; Figuren handeln und sprechen aus ihrer eigenen Perspektive.
 - Nutze sparsam TTS-Emotions-Tags wie (calm), (tense), (whispering), (excited)."""
     messages = [{"role": "system", "content": system}]
     for item in recent:
         messages.append({"role": "user", "content": f"{item.speaker_name}: {item.text}"})
-    messages.append({"role": "user", "content": f"/no_think\nSzene {scene}: {character.name} ist jetzt an der Reihe. Fahre neu und ohne Wiederholung fort."})
+    turn_instruction = (
+        f"/no_think\nSzene {scene}. Schreibe exakt 2 bis 4 kurze Erzählsätze in der dritten Person. "
+        "Beginne den ersten Satz mit 'Mara'. Nutze keines der Wörter Ich, mich, mein oder wir. "
+        "Beschreibe nur beobachtbare Sims-artige Handlungen und deren direkte Folge. "
+        "Stilbeispiel: 'Mara kocht den letzten Kaffee. Elias öffnet den leeren Schrank und seufzt.'"
+        if is_narrator else
+        f"/no_think\nSzene {scene}. {character.name} ist an der Reihe. Beginne mit einer konkreten "
+        f"Handlung von {character.name}, danach darf kurzer natürlicher Dialog folgen. Fahre ohne Wiederholung fort."
+    )
+    messages.append({"role": "user", "content": turn_instruction})
     response = await get_lm_studio_client().chat_completion(
         messages,
         model=character.model_name or session["model_name"],
@@ -307,6 +330,11 @@ Regeln:
         max_tokens=700,
     )
     text = response["choices"][0]["message"]["content"].strip()
+    if progress_queue is not None:
+        await progress_queue.put({"event": "progress", "data": {
+            "percent": max(1, round((session["current_scene"] * len(session["characters"]) + session["current_character_index"] + 0.35) / (session["max_scenes"] * len(session["characters"])) * 100)),
+            "label": f"Text für {character.name} fertig · Stimme wird erzeugt",
+        }})
     audio = await _tts_speech(text, character.voice_description, character.language)
     return {
         "speaker_id": character.id,
