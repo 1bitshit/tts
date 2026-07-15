@@ -42,7 +42,7 @@ async function json<T>(response: Response): Promise<T> {
 }
 
 export async function createStory(payload: object, apiKey: string): Promise<StoryState> {
-  return json(await fetch(BASE(), { method: 'POST', headers: getHeaders(apiKey), body: JSON.stringify(payload) }));
+  return json(await fetch(`${BASE()}/create`, { method: 'POST', headers: getHeaders(apiKey), body: JSON.stringify(payload) }));
 }
 
 export async function listStories(apiKey: string) {
