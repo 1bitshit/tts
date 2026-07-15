@@ -41,7 +41,7 @@ ENV/
 # Models and cache
 .cache/
 **/.cache/
-models/
+/models/
 model-cache/
 checkpoints/
 huggingface/
