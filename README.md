@@ -244,6 +244,17 @@ are `https://<user>-8000me-up80.beam.eysho.info` and
 `https://<user>-1235me-up80.beam.eysho.info`. `BEAM_API_KEY` remains only in
 the ignored `.env` file.
 
+For a fresh GPU test machine, create a random protected test API key and store
+the existing Beam credentials locally in one step:
+
+```bash
+BEAM_API_KEY='<key from beam.eysho.info>' ./setup/test-user.sh bkg
+./run.sh --with-lms --with-beam
+```
+
+The generated TTS API key is displayed once and must be entered in the WebUI.
+It is not a Beam account and is never committed to Git.
+
 Configuration:
 
 ```dotenv
