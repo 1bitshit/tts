@@ -37,17 +37,23 @@ PROXY_PORT="${LM_STUDIO_PROXY_PORT:-1235}"
 find_python() {
   if [ -n "${QWEN_TTS_PYTHON:-}" ] && [ -x "$QWEN_TTS_PYTHON" ]; then echo "$QWEN_TTS_PYTHON"; return; fi
   for candidate in \
+    "${CONDA_PREFIX:-}/bin/python" \
     "$ROOT/.venv/bin/python" \
     "/notebooks/fakeroot/home/bkg/miniconda/envs/qwen-tts/bin/python" \
+    "/notebooks/workspace/bkg/miniconda/envs/qwen-tts/bin/python" \
+    "$HOME/miniconda3/envs/qwen-tts/bin/python" \
     "$HOME/miniconda/envs/qwen-tts/bin/python" \
     "$HOME/.conda/envs/qwen-tts/bin/python"; do
-    if [ -x "$candidate" ]; then echo "$candidate"; return; fi
+    if [ -x "$candidate" ] && "$candidate" -c 'import fastapi, uvicorn, httpx, pydantic_settings' >/dev/null 2>&1; then
+      echo "$candidate"; return
+    fi
   done
-  if command -v python >/dev/null 2>&1 && python -c 'import uvicorn, httpx' >/dev/null 2>&1; then
+  if command -v python >/dev/null 2>&1 && python -c 'import fastapi, uvicorn, httpx, pydantic_settings' >/dev/null 2>&1; then
     command -v python
     return
   fi
-  echo "No Python environment with uvicorn/httpx found. Activate qwen-tts first." >&2
+  echo "No Python environment with FastAPI, uvicorn, httpx and pydantic-settings found." >&2
+  echo "Activate qwen-tts and run: python -m pip install -r requirements.txt" >&2
   return 1
 }
 
@@ -95,6 +101,14 @@ start_proxy() {
       </dev/null >"$LOG_DIR/lmstudio-proxy.log" 2>&1 &
   fi
   echo "$!" > "$PROXY_PID_FILE"
+  for _ in $(seq 1 50); do
+    proxy_running && return
+    sleep 0.1
+  done
+  echo "LM auth proxy failed to start. Log:" >&2
+  tail -n 80 "$LOG_DIR/lmstudio-proxy.log" >&2 || true
+  rm -f "$PROXY_PID_FILE"
+  return 1
 }
 
 start_all() {
