@@ -46,7 +46,7 @@ start_tunnel() {
   fi
   nohup setsid "$BIN" \
     --username "$BEAM_USERNAME" --api-key "$BEAM_API_KEY" \
-    --server "$BEAM_DOMAIN" --server-port "$BEAM_CONTROL_PORT" --debug \
+    --server "$BEAM_DOMAIN" --server-port "$BEAM_CONTROL_PORT" --debug --undead \
     "$local_port:me" "up:$remote_port" \
     </dev/null >"$LOG_DIR/beam-$name.log" 2>&1 &
   echo "$!" > "$pid_file"
