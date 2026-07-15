@@ -285,11 +285,24 @@ activate_conda() {
 # Dependency Installation
 # ==============================================================================
 
+# Activate first so setup always installs into qwen-tts instead of the caller's
+# root/base Python environment.
+activate_environment
+
 if [ "$SETUP_MODE" = true ]; then
     echo ""
     echo "📦 Installing dependencies..."
     pip install --upgrade pip
     pip install -q -r requirements.txt
+    if ! command -v sox >/dev/null 2>&1; then
+        echo "📦 Installing SoX system packages..."
+        if command -v apt-get >/dev/null 2>&1; then
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sox libsox-fmt-all
+        else
+            echo "⚠️  SoX is missing; install sox and libsox-fmt-all with the system package manager."
+        fi
+    fi
     echo "✅ Dependencies installed"
     echo ""
 fi
@@ -297,8 +310,6 @@ fi
 # ==============================================================================
 # Activate Environment
 # ==============================================================================
-activate_environment
-
 if [ "$WITH_LMS" = true ]; then
     echo "🧠 Starting LM Studio and shared-key proxy..."
     bash "$SCRIPT_DIR/setup/lmstudio.sh" start

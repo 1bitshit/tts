@@ -1,6 +1,7 @@
 # Core dependencies (install first)
 # torch>=2.1.0  <-- Provided by base image
-# numpy>=1.24.0 <-- Provided by base image
+# Torch builds used by Qwen may still be compiled against the NumPy 1.x ABI.
+numpy>=1.24.0,<2
 
 # Audio processing
 soundfile>=0.12.1

@@ -9,14 +9,11 @@ from contextlib import redirect_stdout
 from typing import Optional, Dict, Any
 from app.config import settings
 
-# qwen-tts prints an unconditional flash-attn warning while importing its
-# legacy 25 Hz tokenizer. On explicitly configured CPU/eager installations
-# this is expected, not actionable, and should not pollute every server start.
-if settings.use_flash_attention and settings.cuda_device != "cpu":
+# qwen-tts prints an unconditional flash-attn warning from its legacy 25 Hz
+# tokenizer during import. Actual capability is checked when a model loads, so
+# suppress only this import-time stdout noise on every platform.
+with redirect_stdout(io.StringIO()):
     from qwen_tts import Qwen3TTSModel
-else:
-    with redirect_stdout(io.StringIO()):
-        from qwen_tts import Qwen3TTSModel
 
 logger = logging.getLogger(__name__)
 
