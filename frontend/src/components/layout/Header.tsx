@@ -2,6 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { StatusIndicator } from '../ui/StatusIndicator';
 import { useI18n } from '../../i18n/I18nContext';
 import { checkHealth } from '../../services/api';
+import type { Language } from '../../types';
+
+const LANGUAGES: ReadonlyArray<{ code: Language; label: string; name: string }> = [
+  { code: 'de', label: 'DE', name: 'Deutsch' },
+  { code: 'en', label: 'EN', name: 'English' },
+  { code: 'zh-cn', label: '中文', name: '中文' },
+];
 
 export function Header() {
   const { language, setLanguage } = useI18n();
@@ -11,13 +18,24 @@ export function Header() {
   }>({ status: 'loading', text: 'Checking...' });
 
   useEffect(() => {
-    checkHealth()
-      .then((data) => {
+    let cancelled = false;
+
+    const loadServerStatus = async () => {
+      try {
+        const data = await checkHealth();
+        if (cancelled) return;
         setServerStatus({ status: 'online', text: `v${data.version}` });
-      })
-      .catch(() => {
+      } catch {
+        if (cancelled) return;
         setServerStatus({ status: 'offline', text: 'Offline' });
-      });
+      }
+    };
+
+    void loadServerStatus();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -40,27 +58,31 @@ export function Header() {
           </div>
 
           {/* Language Switcher */}
-          <div className="flex gap-xs p-[2px] bg-bg-surface border border-border-subtle rounded-md">
-            <button
-              onClick={() => setLanguage('en')}
-              className={`px-sm py-xs font-display text-xs font-medium rounded transition-all ${
-                language === 'en'
-                  ? 'text-accent-cyan bg-bg-card shadow-sm border border-border-subtle'
-                  : 'text-text-muted hover:text-text-primary hover:bg-bg-elevated border border-transparent'
-              }`}
-            >
-              EN
-            </button>
-            <button
-              onClick={() => setLanguage('zh-cn')}
-              className={`px-sm py-xs font-display text-xs font-medium rounded transition-all ${
-                language === 'zh-cn'
-                  ? 'text-accent-cyan bg-bg-card shadow-sm border border-border-subtle'
-                  : 'text-text-muted hover:text-text-primary hover:bg-bg-elevated border border-transparent'
-              }`}
-            >
-              中文
-            </button>
+          <div
+            className="flex gap-xs p-[3px] bg-bg-surface border border-border-subtle rounded-md"
+            role="group"
+            aria-label="Language"
+          >
+            {LANGUAGES.map(({ code, label, name }) => {
+              const isActive = language === code;
+
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setLanguage(code)}
+                  aria-label={name}
+                  aria-pressed={isActive}
+                  className={`min-w-10 px-sm py-xs font-display text-xs rounded border transition-all ${
+                    isActive
+                      ? 'font-bold text-bg-deep bg-accent-cyan border-accent-cyan shadow-glow-cyan'
+                      : 'font-medium text-text-muted bg-transparent border-transparent hover:text-text-primary hover:bg-bg-elevated hover:border-border-subtle'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Status */}
