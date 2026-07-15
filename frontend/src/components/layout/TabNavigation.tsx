@@ -16,6 +16,7 @@ export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
     { id: 'voice-design', label: t('voiceDesign') },
     { id: 'voice-clone', label: t('voiceClone') },
     { id: 'debate', label: t('debate') },
+    { id: 'story', label: '📖 Story' },
     { id: 'archive', label: t('archive') },
     { id: 'settings', label: t('settings') },
   ];

@@ -17,6 +17,7 @@ from app.auth import verify_api_key
 from app.models.manager import model_manager, store_voice_clone_prompt, get_voice_clone_prompt
 from app.routers.archive import save_debate_to_archive
 from app.services.lm_studio import get_lm_studio_client
+from app.services.session_store import add_memory, list_sessions, load_session, retrieve_memories, save_session
 from app.utils.audio import numpy_to_wav_bytes, apply_speed
 from app.utils.emotion_tags import generate_with_emotion_tags, has_emotion_tags, strip_emotion_tags
 from app.utils.metrics import PerformanceTracker
@@ -42,6 +43,7 @@ class CreateDebateRequest(BaseModel):
     max_rounds: int = Field(default=10, ge=1, le=100)
     auto_advance: bool = True
     delay_between_speakers: float = 1.0
+    delivery_mode: str = Field(default="live", pattern="^(live|prerecorded)$")
 
 class AddSpeakerRequest(BaseModel):
     name: str
@@ -79,6 +81,21 @@ class DebateState(BaseModel):
 
 _sessions: Dict[str, dict] = {}
 _sse_queues: Dict[str, asyncio.Queue] = {}
+
+
+def _restore_debate(session_id: str) -> Optional[dict]:
+    if session_id in _sessions:
+        return _sessions[session_id]
+    raw = load_session(session_id, "debate")
+    if not raw:
+        return None
+    raw["speakers"] = [SpeakerConfig(**speaker) for speaker in raw.get("speakers", [])]
+    raw["messages"] = [DebateMessage(**message) for message in raw.get("messages", [])]
+    raw["running_task"] = None
+    raw["status"] = "stopped" if raw.get("status") == "running" else raw.get("status", "stopped")
+    _sessions[session_id] = raw
+    _sse_queues[session_id] = asyncio.Queue()
+    return raw
 
 def _default_speakers() -> List[SpeakerConfig]:
     return [
@@ -239,12 +256,14 @@ async def create_debate(req: CreateDebateRequest, _=Depends(verify_api_key)):
         "max_rounds": req.max_rounds,
         "auto_advance": req.auto_advance,
         "delay_between_speakers": req.delay_between_speakers,
+        "delivery_mode": req.delivery_mode,
         "created_at": now,
         "updated_at": now,
         "running_task": None,
     }
     _sessions[session_id] = session
     _sse_queues[session_id] = asyncio.Queue()
+    save_session("debate", session)
     return {
         "session_id": session_id,
         "topic": req.topic,
@@ -254,16 +273,13 @@ async def create_debate(req: CreateDebateRequest, _=Depends(verify_api_key)):
 
 @router.post("/{session_id}/start")
 async def start_debate(session_id: str, _=Depends(verify_api_key)):
-    session = _sessions.get(session_id)
+    session = _restore_debate(session_id)
     if not session:
         raise HTTPException(404, "Debate session not found")
     if session["status"] == "running":
         raise HTTPException(400, "Debate already running")
 
     session["status"] = "running"
-    session["current_round"] = 0
-    session["current_speaker_index"] = 0
-    session["messages"] = []
     session["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     lm = get_lm_studio_client()
@@ -278,7 +294,11 @@ async def start_debate(session_id: str, _=Depends(verify_api_key)):
 
     # Create consistent voice prompts for each speaker (Voice Design → Clone pipeline)
     await q.put({"event": "status", "data": {"status": "creating_voices"}})
-    for speaker in session["speakers"]:
+    for voice_index, speaker in enumerate(session["speakers"]):
+        await q.put({"event": "progress", "data": {
+            "percent": round(voice_index / len(session["speakers"]) * 5),
+            "label": f"Stimme für {speaker.name} wird vorbereitet",
+        }})
         if not speaker.voice_prompt_id:
             speaker.voice_prompt_id = await _create_speaker_voice_prompt(speaker)
             if speaker.voice_prompt_id:
@@ -289,11 +309,12 @@ async def start_debate(session_id: str, _=Depends(verify_api_key)):
             })
 
     asyncio.create_task(_run_debate_loop(session_id))
+    save_session("debate", session)
     return {"status": "running", "session_id": session_id}
 
 @router.post("/{session_id}/stop")
 async def stop_debate(session_id: str, _=Depends(verify_api_key)):
-    session = _sessions.get(session_id)
+    session = _restore_debate(session_id)
     if not session:
         raise HTTPException(404, "Debate session not found")
     session["status"] = "stopped"
@@ -303,11 +324,17 @@ async def stop_debate(session_id: str, _=Depends(verify_api_key)):
     if q:
         await q.put({"event": "status", "data": {"status": "stopped"}})
         await q.put(None)
+    save_session("debate", session)
     return {"status": "stopped"}
+
+
+@router.get("/sessions")
+async def saved_debate_sessions(_=Depends(verify_api_key)):
+    return list_sessions("debate")
 
 @router.get("/{session_id}")
 async def get_debate(session_id: str):
-    session = _sessions.get(session_id)
+    session = _restore_debate(session_id)
     if not session:
         raise HTTPException(404, "Debate session not found")
     return _session_to_state(session)
@@ -352,7 +379,7 @@ async def download_lm_model(req: DownloadModelRequest, _=Depends(verify_api_key)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
-                f"{lm.base_url.replace('/v1', '')}/models/download",
+                f"{lm.base_url.replace('/v1', '')}/api/v1/models/download",
                 json={"model": req.model_id},
             )
             if resp.status_code == 200:
@@ -474,22 +501,37 @@ async def _run_debate_loop(session_id: str):
                     })
 
                 try:
+                    total_turns = session["max_rounds"] * len(speakers)
+                    completed_turns = (round_num - 1) * len(speakers) + idx
+                    if q:
+                        await q.put({"event": "progress", "data": {
+                            "percent": round(5 + completed_turns / total_turns * 95),
+                            "label": f"Argument von {speaker.name} wird erzeugt",
+                        }})
                     msg = await _generate_speaker_response(session_id, speaker)
                     session["messages"].append(DebateMessage(**msg))
+                    add_memory(session_id, "debate", speaker.name, msg["text"])
                     session["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    save_session("debate", session)
 
                     if q:
+                        await q.put({"event": "progress", "data": {
+                            "percent": round(5 + (completed_turns + 1) / total_turns * 95),
+                            "label": f"Runde {round_num}: Text und Stimme gespeichert",
+                        }})
                         await q.put({"event": "message", "data": msg})
 
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
                     logger.error(f"Speaker {speaker.name} error: {e}")
+                    session["status"] = "stopped"
                     if q:
                         await q.put({
                             "event": "error",
                             "data": {"speaker_id": speaker.id, "message": str(e)}
                         })
+                    break
 
                 if session["auto_advance"] and session["delay_between_speakers"] > 0:
                     await asyncio.sleep(session["delay_between_speakers"])
@@ -513,6 +555,7 @@ async def _run_debate_loop(session_id: str):
         # Save to archive when debate ends
         try:
             save_debate_to_archive(session_id, session)
+            save_session("debate", session)
         except Exception as e:
             logger.warning(f"Failed to archive debate {session_id}: {e}")
         if q:
@@ -526,6 +569,14 @@ async def _generate_speaker_response(session_id: str, speaker: SpeakerConfig) ->
     system_prompt = _build_system_prompt(
         session["topic"], speaker, session["speakers"]
     )
+
+    recent_query = " ".join(message.text for message in session["messages"][-4:]) or session["topic"]
+    memories = retrieve_memories(session_id, recent_query, limit=5)
+    if memories:
+        system_prompt += (
+            "\n\nRAG-Langzeitgedächtnis – diese früheren Argumente berücksichtigen, "
+            "aber weder Inhalt noch Formulierung wiederholen:\n- " + "\n- ".join(memories)
+        )
 
     messages = [{"role": "system", "content": system_prompt}]
     for m in session["messages"][-10:]:

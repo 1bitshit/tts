@@ -27,6 +27,12 @@ const DEFAULT_VOICES = [
   { nameKey: 'voiceNeutralMale', desc: 'Eine neutrale, professionelle Männerstimme, geeignet für formelle Debatten' },
 ];
 
+const DEFAULT_DEBATE_SPEAKERS: SpeakerConfig[] = [
+  { id: 'speaker_1', name: 'Klara', personality: DEFAULT_PERSONALITIES.progressive, model_name: '', voice_description: DEFAULT_VOICES[0].desc, language: 'German', voice_prompt_id: '' },
+  { id: 'speaker_2', name: 'Lukas', personality: DEFAULT_PERSONALITIES.conservative, model_name: '', voice_description: DEFAULT_VOICES[1].desc, language: 'German', voice_prompt_id: '' },
+  { id: 'speaker_3', name: 'Mia', personality: DEFAULT_PERSONALITIES.centrist, model_name: '', voice_description: DEFAULT_VOICES[4].desc, language: 'German', voice_prompt_id: '' },
+];
+
 const EMOJI_MAP: Record<string, string> = {
   '(happy)': '😊', '(sad)': '😢', '(angry)': '😠', '(surprised)': '😮',
   '(calm)': '😌', '(excited)': '🤩', '(thoughtful)': '🤔', '(confident)': '💪',
@@ -66,7 +72,7 @@ export function DebateTab() {
   const [topic, setTopic] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'creating_voices' | 'running' | 'stopped' | 'finished' | 'disconnected'>('idle');
-  const [speakers, setSpeakers] = useState<SpeakerConfig[]>([]);
+  const [speakers, setSpeakers] = useState<SpeakerConfig[]>(DEFAULT_DEBATE_SPEAKERS);
   const [messages, setMessages] = useState<DebateMessageType[]>([]);
   const [lmConnected, setLmConnected] = useState(true);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
@@ -77,6 +83,8 @@ export function DebateTab() {
   const [clipsExpanded, setClipsExpanded] = useState(false);
   const [liveAudioQueue, setLiveAudioQueue] = useState<string[]>([]);
   const [autoPlay, setAutoPlay] = useState(true);
+  const [deliveryMode, setDeliveryMode] = useState<'live' | 'prerecorded'>('live');
+  const [progress, setProgress] = useState({ percent: 0, label: 'Bereit' });
   const chatEndRef = useRef<HTMLDivElement>(null);
   const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -106,7 +114,7 @@ export function DebateTab() {
       return;
     }
     try {
-      const result = await debateService.createDebate({ topic, speakers, max_rounds: 10, auto_advance: true, delay_between_speakers: 1.5 }, apiKey);
+      const result = await debateService.createDebate({ topic, speakers, max_rounds: 10, auto_advance: true, delay_between_speakers: 1.5, delivery_mode: deliveryMode }, apiKey);
       setSessionId(result.session_id);
       setMessages([]);
       setStatus('idle');
@@ -114,7 +122,7 @@ export function DebateTab() {
     } catch (e: any) {
       toast.showToast(e.message || t('debateCreateError'), 'error');
     }
-  }, [topic, speakers, apiKey, toast, t]);
+  }, [topic, speakers, deliveryMode, apiKey, toast, t]);
 
   const handleStart = useCallback(async () => {
     if (!sessionId) return;
@@ -137,6 +145,9 @@ export function DebateTab() {
             }
             return newMsgs;
           });
+          break;
+        case 'progress':
+          setProgress({ percent: data.percent, label: data.label });
           break;
         case 'error':
           toast.showToast(data.message || 'Debate error', 'error');
@@ -163,7 +174,7 @@ export function DebateTab() {
 
   const addSpeaker = () => {
     if (speakers.length >= 6) { toast.showToast(t('debateMaxSpeakers'), 'warning'); return; }
-    const name = newSpeakerName || `${t('debateAddSpeaker')} ${speakers.length + 1}`;
+    const name = newSpeakerName.trim() || `Gast ${speakers.length + 1}`;
     setSpeakers(prev => [...prev, { id: `speaker_${prev.length}`, name, personality: newSpeakerPersonality || DEFAULT_PERSONALITIES.progressive, model_name: '', voice_description: newSpeakerVoice, language: 'German', voice_prompt_id: '' }]);
     setNewSpeakerName('');
   };
@@ -259,6 +270,10 @@ export function DebateTab() {
             </div>
           </details>
           <div className="flex gap-sm items-center flex-wrap">
+            <select value={deliveryMode} onChange={e => { const mode = e.target.value as 'live' | 'prerecorded'; setDeliveryMode(mode); setAutoPlay(mode === 'live'); }} disabled={!!sessionId} className="px-sm py-xs rounded bg-bg-surface border border-border-subtle text-text-primary text-xs">
+              <option value="live">Live-Streaming</option>
+              <option value="prerecorded">Vorproduziert</option>
+            </select>
             {!sessionId ? (
               <Button onClick={handleCreate} disabled={!topic.trim() || speakers.length < 2}>{t('debateCreate')}</Button>
             ) : status === 'idle' || status === 'stopped' || status === 'finished' ? (
@@ -282,6 +297,10 @@ export function DebateTab() {
               </button>
             )}
           </div>
+          {(status === 'creating_voices' || status === 'running') && <div>
+            <div className="flex justify-between text-xs text-text-secondary mb-xs"><span>{progress.label}</span><span>{progress.percent}%</span></div>
+            <div className="h-2 rounded bg-bg-surface overflow-hidden"><div className="h-full bg-accent-cyan transition-all duration-300" style={{ width: `${progress.percent}%` }} /></div>
+          </div>}
         </div>
       </Card>
 

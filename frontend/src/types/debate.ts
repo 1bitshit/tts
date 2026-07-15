@@ -5,6 +5,7 @@ export interface SpeakerConfig {
   model_name: string;
   voice_description: string;
   language: string;
+  voice_prompt_id?: string;
 }
 
 export interface DebateMessage {
@@ -34,6 +35,7 @@ export interface CreateDebateRequest {
   max_rounds: number;
   auto_advance: boolean;
   delay_between_speakers: number;
+  delivery_mode: 'live' | 'prerecorded';
 }
 
 export interface AddSpeakerRequest {
@@ -45,6 +47,6 @@ export interface AddSpeakerRequest {
 }
 
 export type SSEEvent = {
-  event: 'status' | 'turn' | 'message' | 'error';
+  event: 'status' | 'turn' | 'message' | 'progress' | 'error';
   data: any;
 };

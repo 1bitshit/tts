@@ -64,10 +64,16 @@ export type ApiDocsMap = {
   'voice-clone': ApiDocConfig;
   'settings': ApiDocConfig;
   'debate': ApiDocConfig;
+  'story': ApiDocConfig;
   'archive': ApiDocConfig;
 };
 
 export const API_DOCS: ApiDocsMap = {
+  'story': {
+    title: 'Story API',
+    description: 'Persistente, fortlaufende Geschichten mit RAG, Figuren und TTS.',
+    endpoint: { method: 'POST', path: '/api/v1/story' },
+  },
   'custom-voice': {
     title: 'Custom Voice API',
     description: 'Generate speech using one of 9 preset speakers. Supports emotional control via style instructions and multiple languages.',

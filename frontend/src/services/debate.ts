@@ -79,6 +79,7 @@ export function streamDebate(sessionId: string, onEvent: (event: string, data: a
   es.addEventListener('status', (e) => onEvent('status', JSON.parse(e.data)));
   es.addEventListener('turn', (e) => onEvent('turn', JSON.parse(e.data)));
   es.addEventListener('message', (e) => onEvent('message', JSON.parse(e.data)));
+  es.addEventListener('progress', (e) => onEvent('progress', JSON.parse(e.data)));
   es.addEventListener('error', (e) => onEvent('error', JSON.parse((e as MessageEvent).data)));
 
   es.onerror = () => {

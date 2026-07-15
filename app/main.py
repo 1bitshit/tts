@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from app import __version__
 from app.config import settings
 from app.models.manager import model_manager
-from app.routers import health, custom_voice, voice_design, base, debate, archive
+from app.routers import health, custom_voice, voice_design, base, debate, archive, story, model_lab
 
 # Configure logging
 logging.basicConfig(
@@ -148,6 +148,8 @@ app.include_router(voice_design.router)
 app.include_router(base.router)
 app.include_router(debate.router)
 app.include_router(archive.router)
+app.include_router(story.router)
+app.include_router(model_lab.router)
 
 
 @app.get("/demo")

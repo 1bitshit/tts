@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     lm_studio_internal_port: int = Field(default=1234)
     lm_studio_proxy_host: str = Field(default="0.0.0.0")
     lm_studio_proxy_port: int = Field(default=1235)
+    session_db_path: str = Field(default="./data/sessions.sqlite3")
+    data_dir: str = Field(default="./data")
+    model_judge_name: str = Field(default="Qwen/Qwen3-0.6B-GGUF")
 
     # SSL/HTTPS Configuration
     ssl_enabled: bool = Field(

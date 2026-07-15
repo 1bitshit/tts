@@ -4,6 +4,7 @@ LM Studio runs at http://localhost:1234/v1 by default.
 """
 import json
 import logging
+import re
 import httpx
 from typing import AsyncGenerator, List, Optional
 from app.config import settings
@@ -50,14 +51,17 @@ class LMStudioClient:
             "max_tokens": max_tokens,
             "stream": stream,
         }
-        if model:
-            payload["model"] = model
+        payload["model"] = await self.resolve_chat_model(model)
 
         resp = await self._client.post(
             f"{self.base_url}/chat/completions",
             json=payload,
         )
-        resp.raise_for_status()
+        if resp.is_error:
+            raise RuntimeError(
+                f"LM Studio {resp.status_code}: {resp.text[:1200]} "
+                f"(model={payload['model']})"
+            )
         return resp.json()
 
     async def chat_completion_stream(
@@ -74,15 +78,16 @@ class LMStudioClient:
             "max_tokens": max_tokens,
             "stream": True,
         }
-        if model:
-            payload["model"] = model
+        payload["model"] = await self.resolve_chat_model(model)
 
         async with self._client.stream(
             "POST",
             f"{self.base_url}/chat/completions",
             json=payload,
         ) as resp:
-            resp.raise_for_status()
+            if resp.is_error:
+                body = (await resp.aread()).decode(errors="replace")
+                raise RuntimeError(f"LM Studio {resp.status_code}: {body[:1200]}")
             async for line in resp.aiter_lines():
                 if line.startswith("data: "):
                     data = line[6:].strip()
@@ -104,11 +109,45 @@ class LMStudioClient:
         data = resp.json()
         return [m["id"] for m in data.get("data", [])]
 
+    async def list_chat_models(self) -> List[str]:
+        await self.ensure_client()
+        root = self.base_url.removesuffix("/v1")
+        resp = await self._client.get(f"{root}/api/v1/models")
+        resp.raise_for_status()
+        return [
+            model.get("key") or model.get("modelKey")
+            for model in resp.json().get("models", [])
+            if model.get("type") == "llm" and (model.get("key") or model.get("modelKey"))
+        ]
+
+    async def resolve_chat_model(self, requested: str = "") -> str:
+        models = await self.list_chat_models()
+        if not models:
+            raise RuntimeError(
+                "Kein Chat-LLM in LM Studio installiert. Öffne Einstellungen → "
+                "Tägliches Modelllabor und installiere Qwen3-0.6B oder Qwen3-1.7B."
+            )
+        if requested:
+            requested_normalized = re.sub(
+                r"[^a-z0-9]", "", requested.lower().removesuffix("-gguf")
+            )
+            for model in models:
+                model_normalized = re.sub(r"[^a-z0-9]", "", model.lower())
+                if (
+                    model.lower() == requested.lower()
+                    or model_normalized in requested_normalized
+                    or requested_normalized in model_normalized
+                ):
+                    return model
+            raise RuntimeError(
+                f"Modell '{requested}' ist nicht in LM Studio installiert. "
+                f"Verfügbar: {', '.join(models)}"
+            )
+        return models[0]
+
     async def is_healthy(self) -> bool:
         try:
-            await self.ensure_client()
-            resp = await self._client.get(f"{self.base_url}/models", timeout=5.0)
-            return resp.status_code == 200
+            return bool(await self.list_chat_models())
         except Exception:
             return False
 

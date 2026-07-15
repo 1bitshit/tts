@@ -4,6 +4,7 @@ import { ApiKeyConfig } from './ApiKeyConfig';
 import { ServerStatus } from './ServerStatus';
 import { CacheStats } from './CacheStats';
 import { LMStudioConfig } from './LMStudioConfig';
+import { ModelLab } from './ModelLab';
 import { useTranslation } from '../../../i18n/I18nContext';
 
 export function SettingsTab() {
@@ -21,6 +22,7 @@ export function SettingsTab() {
         <ServerStatus />
         <CacheStats />
         <LMStudioConfig />
+        <ModelLab />
 
         {/* API Documentation Card */}
         <div className="p-lg bg-bg-surface border border-border-subtle rounded-lg">

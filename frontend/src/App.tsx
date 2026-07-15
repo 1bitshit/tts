@@ -8,6 +8,7 @@ import { CustomVoiceTab } from './components/tabs/CustomVoice';
 import { VoiceDesignTab } from './components/tabs/VoiceDesign';
 import { VoiceCloneTab } from './components/tabs/VoiceClone';
 import { DebateTab } from './components/tabs/Debate';
+import { StoryTab } from './components/tabs/Story';
 import { ArchiveTab } from './components/tabs/Archive';
 import { SettingsTab } from './components/tabs/Settings';
 import { I18nProvider } from './i18n/I18nContext';
@@ -27,6 +28,8 @@ function AppContent() {
         return <VoiceCloneTab />;
       case 'debate':
         return <DebateTab />;
+      case 'story':
+        return <StoryTab />;
       case 'archive':
         return <ArchiveTab />;
       case 'settings':

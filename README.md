@@ -240,6 +240,30 @@ LM_STUDIO_DOWNLOAD_MODEL=false
 Use `./setup/lmstudio.sh stop` or `restart` to manage both processes. In
 production, startup fails securely when `API_KEYS` is empty.
 
+### German debate and story mode
+
+The WebUI contains persistent Debate and Story tabs. Both use LM Studio for
+German text, Qwen TTS for the voices, SQLite for resumable sessions, and a
+local memory retrieval layer to reduce repetition. Choose either
+`Live-Streaming` (play each generated contribution immediately) or
+`Vorproduziert` (generate without automatic playback). Both modes show the
+current generation step and progress in percent.
+
+New stories assign a random but stable German voice and personality to the
+narrator and characters. Stopping or finishing writes the manifest to
+`data/archive/stories.json` and generated audio to `data/archive/clips/`.
+
+Install the small default models once:
+
+```bash
+./scripts/setup/debate-models.sh  # Qwen3 0.6B
+./scripts/setup/story-models.sh   # Qwen3 1.7B
+```
+
+The same actions and three rotating daily model suggestions are available in
+WebUI → Settings → Tägliches Modelllabor. Configure persistence with
+`SESSION_DB_PATH` and `DATA_DIR` in `.env`.
+
 ### Step 2: Start the Server
 
 **Local (using run script):**

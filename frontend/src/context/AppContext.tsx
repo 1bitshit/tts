@@ -11,7 +11,7 @@ export interface TabAudioState {
 
 const emptyAudio: TabAudioState = { url: null, metrics: {}, isLoading: false };
 
-export type TabId = 'custom-voice' | 'voice-design' | 'voice-clone' | 'debate' | 'archive' | 'settings';
+export type TabId = 'custom-voice' | 'voice-design' | 'voice-clone' | 'debate' | 'story' | 'archive' | 'settings';
 
 interface AppState {
   apiKey: string;
