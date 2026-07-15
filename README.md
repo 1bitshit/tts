@@ -255,6 +255,12 @@ BEAM_API_KEY='<key from beam.eysho.info>' ./setup/test-user.sh bkg
 The generated TTS API key is displayed once and must be entered in the WebUI.
 It is not a Beam account and is never committed to Git.
 
+For an intentionally simple temporary test login (`test` / API key `test`):
+
+```bash
+TTS_TEST_KEY=test BEAM_API_KEY='<real Beam key>' ./setup/test-user.sh test
+```
+
 Configuration:
 
 ```dotenv

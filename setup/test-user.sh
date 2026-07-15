@@ -15,7 +15,9 @@ if [ ! -f "$ENV_FILE" ]; then
   cp "$ROOT/.env.example" "$ENV_FILE"
 fi
 
-if command -v openssl >/dev/null 2>&1; then
+if [ -n "${TTS_TEST_KEY:-}" ]; then
+  TTS_KEY="$TTS_TEST_KEY"
+elif command -v openssl >/dev/null 2>&1; then
   TTS_KEY="tts_$(openssl rand -hex 24)"
 else
   TTS_KEY="tts_$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
