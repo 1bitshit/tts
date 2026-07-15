@@ -27,6 +27,9 @@ TTS_LOCAL_PORT="${PORT:-8000}"
 LMS_LOCAL_PORT="${LM_STUDIO_PROXY_PORT:-1235}"
 TTS_REMOTE_PORT="${BEAM_TTS_REMOTE_PORT:-80}"
 LMS_REMOTE_PORT="${BEAM_LMS_REMOTE_PORT:-80}"
+SSH_ENABLED="${BEAM_SSH_ENABLED:-false}"
+SSH_LOCAL_PORT="${BEAM_SSH_LOCAL_PORT:-22}"
+SSH_REMOTE_PORT="${BEAM_SSH_REMOTE_PORT:-22}"
 
 running() {
   local name="$1" pid_file="$RUNTIME_DIR/$1.pid" pid
@@ -74,11 +77,14 @@ start_all() {
   [ -x "$BIN" ] || { echo "Beam client missing or not executable: $BIN" >&2; return 1; }
   start_tunnel qwen "$TTS_LOCAL_PORT" "$TTS_REMOTE_PORT"
   start_tunnel lms "$LMS_LOCAL_PORT" "$LMS_REMOTE_PORT"
+  if [ "$SSH_ENABLED" = "true" ]; then
+    start_tunnel ssh "$SSH_LOCAL_PORT" "$SSH_REMOTE_PORT"
+  fi
   echo "Beam uses the API keys configured in the protected local services."
 }
 
 status_all() {
-  for name in qwen lms; do
+  for name in qwen lms ssh; do
     if running "$name"; then
       echo "$name: running (PID $(cat "$RUNTIME_DIR/$name.pid"))"
     else
@@ -89,8 +95,8 @@ status_all() {
 
 case "$ACTION" in
   start) start_all ;;
-  stop) stop_tunnel qwen; stop_tunnel lms ;;
-  restart) stop_tunnel qwen; stop_tunnel lms; start_all ;;
+  stop) stop_tunnel qwen; stop_tunnel lms; stop_tunnel ssh ;;
+  restart) stop_tunnel qwen; stop_tunnel lms; stop_tunnel ssh; start_all ;;
   status) status_all ;;
   *) echo "Usage: $0 {start|stop|restart|status}" >&2; exit 2 ;;
 esac

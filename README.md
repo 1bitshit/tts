@@ -256,6 +256,18 @@ BEAM_API_KEY='<key from beam.eysho.info>' ./setup/test-user.sh bkg
 The generated TTS API key is displayed once and must be entered in the WebUI.
 It is not a Beam account and is never committed to Git.
 
+Optional SSH uses a separate raw TCP tunnel and must only be enabled after
+installing an SSH public key and disabling password authentication:
+
+```dotenv
+BEAM_SSH_ENABLED=true
+BEAM_SSH_LOCAL_PORT=22
+BEAM_SSH_REMOTE_PORT=22
+```
+
+The resulting host is `<user>-22me-up22.beam.eysho.info`. SSH does not use
+HTTP/TLS; authentication remains the responsibility of the local `sshd`.
+
 For an intentionally simple temporary test login (`test` / API key `test`):
 
 ```bash
