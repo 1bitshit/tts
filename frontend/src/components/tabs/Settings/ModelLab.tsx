@@ -52,7 +52,7 @@ export function ModelLab() {
         </div>)}
       </div>
     </div>)}
-    <div className="flex gap-sm mb-md"><Button variant="secondary" onClick={() => request('/setup/debate', {}).then((value) => setResult(JSON.stringify(value)))}>Debate-Modell einmalig einrichten</Button><Button variant="secondary" onClick={() => request('/setup/story', {}).then((value) => setResult(JSON.stringify(value)))}>Story-Modell einmalig einrichten</Button></div>
+    <div className="flex gap-sm mb-md"><Button variant="secondary" onClick={() => request('/setup/debate', {}).then((value) => setResult(JSON.stringify(value))).catch((error) => setResult(error.message))}>Debate-Modell einmalig einrichten</Button><Button variant="secondary" onClick={() => request('/setup/story', {}).then((value) => setResult(JSON.stringify(value))).catch((error) => setResult(error.message))}>Story-Modell einmalig einrichten</Button></div>
     {result && <pre className="p-sm max-h-52 overflow-auto whitespace-pre-wrap text-xs bg-bg-deep text-text-secondary rounded">{result}</pre>}
   </div>;
 }

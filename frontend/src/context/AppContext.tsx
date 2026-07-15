@@ -53,7 +53,20 @@ interface AppProviderProps {
 
 export function AppProvider({ children }: AppProviderProps) {
   const [apiKey, setApiKeyState] = useState<string>(() => {
-    return localStorage.getItem('qwen-tts-api-key') || DEFAULT_API_KEY;
+    const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const bootstrapKey = fragment.get('api_key')?.trim();
+    if (bootstrapKey) {
+      localStorage.setItem('qwen-tts-api-key', bootstrapKey);
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      return bootstrapKey;
+    }
+    const stored = localStorage.getItem('qwen-tts-api-key') || '';
+    // Remove the historical placeholder which was never a valid credential.
+    if (stored === 'your-api-key-1') {
+      localStorage.removeItem('qwen-tts-api-key');
+      return DEFAULT_API_KEY;
+    }
+    return stored || DEFAULT_API_KEY;
   });
 
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>('Ryan');
