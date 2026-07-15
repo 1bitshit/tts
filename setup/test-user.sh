@@ -51,6 +51,6 @@ Der TTS API-Key wird nur dieses eine Mal vollständig angezeigt.
 Starte jetzt:
   ./run.sh --with-lms --with-beam
 
-Qwen: https://${USERNAME}-8000me-up80.${BEAM_DOMAIN:-beam.eysho.info}
-LM:   https://${USERNAME}-1235me-up80.${BEAM_DOMAIN:-beam.eysho.info}
+Qwen: http://${USERNAME}-8000me-up80.${BEAM_DOMAIN:-beam.eysho.info}
+LM:   http://${USERNAME}-1235me-up80.${BEAM_DOMAIN:-beam.eysho.info}
 EOF

@@ -240,8 +240,9 @@ BEAM_DOMAIN=beam.eysho.info
 
 This starts the bundled Linux x86_64 Beam client for Qwen on local port 8000
 and the authenticated LM proxy on local port 1235. By default the public URLs
-are `https://<user>-8000me-up80.beam.eysho.info` and
-`https://<user>-1235me-up80.beam.eysho.info`. `BEAM_API_KEY` remains only in
+are `http://<user>-8000me-up80.beam.eysho.info` and
+`http://<user>-1235me-up80.beam.eysho.info`. HTTPS requires wildcard TLS/SNI
+termination on the central Beam gateway. `BEAM_API_KEY` remains only in
 the ignored `.env` file.
 
 For a fresh GPU test machine, create a random protected test API key and store

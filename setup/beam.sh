@@ -54,7 +54,7 @@ start_tunnel() {
     rm -f "$pid_file"
     return 1
   fi
-  echo "$name: https://${BEAM_USERNAME}-${local_port}me-up${remote_port}.${BEAM_DOMAIN}"
+  echo "$name: http://${BEAM_USERNAME}-${local_port}me-up${remote_port}.${BEAM_DOMAIN}"
 }
 
 stop_tunnel() {
