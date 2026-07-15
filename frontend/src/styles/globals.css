@@ -7,6 +7,7 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    color-scheme: dark;
   }
 
   body {
@@ -30,6 +31,24 @@
   /* Smooth transitions for interactive elements */
   button, .tab, .card, a, input, textarea, select {
     @apply transition-all duration-150 ease-in-out;
+  }
+
+  /* Native select popups otherwise use the browser's white system theme. */
+  select {
+    color-scheme: dark;
+    background-color: #12121a;
+    color: #f0f0f5;
+  }
+
+  select option,
+  select optgroup {
+    background-color: #12121a;
+    color: #f0f0f5;
+  }
+
+  select option:checked {
+    background-color: #00c4a9;
+    color: #0a0a0f;
   }
 
   /* Scan-line overlay effect */
