@@ -241,7 +241,7 @@ export const de: Record<string, string> = {
   lmStudioDownload: 'Modell herunterladen',
   lmStudioDownloadPlaceholder: 'HuggingFace Modell-ID (z.B. meta-llama/Llama-3.1-8B)',
   lmStudioNoModels: 'Keine Modelle gefunden. Stelle sicher, dass LM Studio läuft.',
-  lmStudioNotRunning: 'LM Studio läuft nicht. Starte es mit: first.sh',
+  lmStudioNotRunning: 'LM Studio läuft nicht. Starte es mit: setup/lmstudio.sh',
   archive: 'Archiv',
   archiveDesc: 'Gespeicherte Sprachprompts, vergangene Debatten und Audio-Clips.',
   archiveDebates: 'Vergangene Debatten',

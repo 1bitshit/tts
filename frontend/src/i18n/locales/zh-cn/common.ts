@@ -217,7 +217,7 @@ export const zhCN = {
   lmStudioDownload: '下载模型',
   lmStudioDownloadPlaceholder: 'HuggingFace 模型 ID (例如 meta-llama/Llama-3.1-8B)',
   lmStudioNoModels: '未找到模型。请确保 LM Studio 正在运行。',
-  lmStudioNotRunning: 'LM Studio 未运行。请使用 first.sh 启动。',
+  lmStudioNotRunning: 'LM Studio 未运行。请使用 setup/lmstudio.sh 启动。',
   // Debate
   debateTitle: '辩论竞技场',
   debateTopicPlaceholder: '输入辩论主题（例如："AI监管应该严格"）',

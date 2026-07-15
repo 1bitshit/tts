@@ -218,7 +218,7 @@ export const en = {
   lmStudioDownload: 'Download Model',
   lmStudioDownloadPlaceholder: 'HuggingFace model ID (e.g. meta-llama/Llama-3.1-8B)',
   lmStudioNoModels: 'No models found. Make sure LM Studio is running.',
-  lmStudioNotRunning: 'LM Studio is not running. Start it with: first.sh',
+  lmStudioNotRunning: 'LM Studio is not running. Start it with: setup/lmstudio.sh',
   debateTitle: 'Debate Arena',
   debateTopicPlaceholder: 'Enter debate topic (e.g. "AI regulation should be strict")',
   debateCreate: 'Create Debate',
