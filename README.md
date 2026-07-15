@@ -225,6 +225,25 @@ curl -H "X-API-Key: $KEY" http://127.0.0.1:1235/v1/models
 curl -H "Authorization: Bearer $KEY" http://127.0.0.1:1235/v1/models
 ```
 
+Publish both protected services through Beam without opening machine ports:
+
+```dotenv
+BEAM_USERNAME=bkg
+BEAM_API_KEY=replace-with-your-beam-key
+BEAM_DOMAIN=beam.eysho.info
+```
+
+```bash
+./run.sh --with-lms --with-beam
+./setup/beam.sh status
+```
+
+This starts the bundled Linux x86_64 Beam client for Qwen on local port 8000
+and the authenticated LM proxy on local port 1235. By default the public URLs
+are `https://<user>-8000me-up80.beam.eysho.info` and
+`https://<user>-1235me-up80.beam.eysho.info`. `BEAM_API_KEY` remains only in
+the ignored `.env` file.
+
 Configuration:
 
 ```dotenv

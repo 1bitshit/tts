@@ -26,6 +26,7 @@ OPTIONS:
     --docker        Run with Docker Compose
     --dev           Development mode: enable auto-reload
     --with-lms      Start LM Studio plus authenticated API proxy
+    --with-beam     Publish Qwen and LM proxy through Beam
 
 EXAMPLES:
     # Quick start (auto-detects conda environment)
@@ -66,6 +67,7 @@ SETUP_MODE=false
 DOCKER_MODE=false
 DEV_MODE=false
 WITH_LMS=false
+WITH_BEAM=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -91,6 +93,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-lms)
             WITH_LMS=true
+            shift
+            ;;
+        --with-beam)
+            WITH_BEAM=true
             shift
             ;;
         *)
@@ -296,6 +302,11 @@ activate_environment
 if [ "$WITH_LMS" = true ]; then
     echo "🧠 Starting LM Studio and shared-key proxy..."
     bash "$SCRIPT_DIR/setup/lmstudio.sh" start
+fi
+
+if [ "$WITH_BEAM" = true ]; then
+    echo "🌐 Starting Beam tunnels for Qwen and LM proxy..."
+    bash "$SCRIPT_DIR/setup/beam.sh" start
 fi
 
 # ==============================================================================
