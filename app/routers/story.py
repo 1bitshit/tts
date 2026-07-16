@@ -18,6 +18,7 @@ from app.routers.debate import _tts_speech
 from app.models.manager import get_voice_clone_prompt, model_manager, store_voice_clone_prompt
 from app.routers.archive import save_story_to_archive
 from app.services.lm_studio import get_lm_studio_client
+from app.services.story_pipeline import edit_and_direct, rank_candidates
 from app.services.c_tts import is_healthy as c_tts_is_healthy, stable_preset
 from app.services.session_store import (
     add_memory,
@@ -454,7 +455,6 @@ async def _story_loop(session_id: str):
                 session["progress"] = {"percent": 100, "label": "Band 1.9 und die gesamte Serie sind vollständig vertont"}
                 await queue.put({"event": "status", "data": {"status": "finished"}})
                 break
-
             session["volume"] += 1
             session["volume_script_ready"] = False
             session["volume_message_start"] = len(session["messages"])
@@ -599,6 +599,7 @@ Regeln:
     )
     messages = [{"role": "system", "content": system}, {"role": "user", "content": turn_instruction}]
     text = ""
+    candidates: list[str] = []
     session["progress"] = {"percent": 30, "label": f"Text für {character.name} wird geschrieben"}
     save_session("story", session)
     recent_tokens = [set(re.findall(r"[a-zäöüß]{4,}", item.text.lower())) for item in recent[-6:]]
@@ -632,10 +633,15 @@ Regeln:
         min_words, max_words = (85, 180) if is_narrator else (15, 60)
         enough_sentences = sentence_count >= 7 if is_narrator else sentence_count >= 1
         if min_words <= len(words) <= max_words and enough_sentences and similarity < 0.45 and not repeats_phrase and not repeated_quote and not wrong_role:
-            break
+            if attempt >= 2:
+                break
         messages.append({"role": "assistant", "content": text})
         retry_length = "9 bis 14 kurze Sätze und 110 bis 170 Wörter" if is_narrator else "1 bis 3 Sätze und 20 bis 50 Wörter"
         messages.append({"role": "user", "content": f"Der Entwurf klingt wiederholend oder heruntergerasselt. Schreibe eine wirklich neue Passage mit {retry_length}: neue Handlung, neue Bilder, andere Satzanfänge und keine bekannte Sechs-Wort-Folge oder Dialogzeile."})
+    ranked = rank_candidates(candidates or [text], [item.text for item in recent], is_narrator)
+    story_context = f"Titel: {session['title']}; Prämisse: {session['premise']}; Genre: {session['genre']}; Band: {volume}; Szene: {scene}"
+    story_context = f"Titel: {session['title']}; Prämisse: {session['premise']}; Genre: {session['genre']}; Band: {volume}; Szene: {scene}"
+
     if progress_queue is not None:
         preview = {
             "speaker_id": character.id, "speaker_name": character.name,

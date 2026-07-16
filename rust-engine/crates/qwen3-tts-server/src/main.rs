@@ -1,3 +1,4 @@
+mod audio_layers;
 mod reference;
 use axum::{
     Json, Router,
@@ -99,7 +100,7 @@ async fn capabilities() -> Json<Value> {
         "sample_rate":SAMPLE_RATE,
         "formats":["wav","pcm","base64"],
         "languages":["German","English","Chinese","Japanese","Korean","French","Russian","Portuguese","Spanish","Italian"],
-        "features":["story","debate","inline-emotions","pauses","laugh","sigh","rate","volume","seed","pcm-streaming","openai-audio-alias"],
+        "features":["story","debate","inline-emotions","pauses","laugh","sigh","rate","volume","seed","pcm-streaming","openai-audio-alias","audio-layers","ambience","sound-effects","silence","voice-ducking"],
         "native_rust":["api","validation","markup","routing","streaming"],
         "reference_backend":["talker","code-predictor","speech-decoder","cuda"]
     }))
@@ -121,11 +122,20 @@ async fn tts(
     Json(req): Json<SpeechRequest>,
 ) -> Result<Response, ApiError> {
     req.validate().map_err(ApiError::bad_request)?;
+    let (clean_text, cues) = audio_layers::extract(&req.text);
+    let mut backend_req = req.clone();
+    backend_req.text = clean_text.clone();
     let bytes = s
         .backend
-        .synthesize(&req)
+        .synthesize(&backend_req)
         .await
         .map_err(internal_bad_gateway)?;
+    let bytes = if cues.is_empty() {
+        bytes.to_vec()
+    } else {
+        audio_layers::mix_wav(&bytes, &cues, clean_text.chars().count())
+            .map_err(ApiError::internal)?
+    };
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "audio/wav")
