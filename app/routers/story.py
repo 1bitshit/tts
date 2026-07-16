@@ -346,43 +346,57 @@ async def _story_loop(session_id: str):
     session = _sessions[session_id]
     queue = _queues[session_id]
     try:
-        if not session.get("volume_script_ready"):
-            # A stop during manuscript generation discards only the incomplete
-            # current draft. Finished earlier volumes and narrated audio remain.
-            draft_start = session.get("volume_message_start", session.get("narration_index", 0))
-            session["messages"] = session["messages"][:draft_start]
-            session["progress"] = {"percent": 3, "label": f"Band {_volume_label(session.get('volume', 1))}: Manuskript und feste Stimmen werden parallel vorbereitet"}
-            save_session("story", session)
-            await queue.put({"event": "progress", "data": session["progress"]})
-            await asyncio.gather(_prepare_all_voices(session, queue), _write_volume(session, queue))
-            session["volume_script_ready"] = True
-            session["narration_index"] = session.get("narration_index", 0)
-            save_session("story", session)
-        else:
-            # In-memory clone prompts disappear on an application restart. The
-            # persisted WAV references rebuild exactly the same voices.
-            await _prepare_all_voices(session, queue)
+        while session["status"] == "running" and session.get("volume", 1) <= 10:
+            if not session.get("volume_script_ready"):
+                # A stop during manuscript generation discards only the incomplete
+                # current draft. Finished earlier volumes and narrated audio remain.
+                draft_start = session.get("volume_message_start", session.get("narration_index", 0))
+                session["messages"] = session["messages"][:draft_start]
+                session["progress"] = {"percent": 3, "label": f"Band {_volume_label(session.get('volume', 1))}: Manuskript und feste Stimmen werden parallel vorbereitet"}
+                save_session("story", session)
+                await queue.put({"event": "progress", "data": session["progress"]})
+                await asyncio.gather(_prepare_all_voices(session, queue), _write_volume(session, queue))
+                session["volume_script_ready"] = True
+                save_session("story", session)
+            else:
+                # In-memory clone prompts disappear on an application restart. The
+                # persisted WAV references rebuild exactly the same voices.
+                await _prepare_all_voices(session, queue)
 
-        while session["status"] == "running" and session["narration_index"] < len(session["messages"]):
-            index = session["narration_index"]
-            message = session["messages"][index]
-            character = next(item for item in session["characters"] if item.id == message.speaker_id)
-            percent = 50 + int(49 * (index + 1) / max(1, len(session["messages"])))
-            session["progress"] = {"percent": percent, "label": f"Band {_volume_label(session.get('volume', 1))}: {character.name} wird vertont"}
+            volume_start = session.get("volume_message_start", 0)
+            volume_length = max(1, len(session["messages"]) - volume_start)
+            while session["status"] == "running" and session["narration_index"] < len(session["messages"]):
+                index = session["narration_index"]
+                message = session["messages"][index]
+                character = next(item for item in session["characters"] if item.id == message.speaker_id)
+                percent = 50 + int(49 * (index - volume_start + 1) / volume_length)
+                session["progress"] = {"percent": percent, "label": f"Band {_volume_label(session.get('volume', 1))}: {character.name} wird vertont"}
+                save_session("story", session)
+                await queue.put({"event": "progress", "data": session["progress"]})
+                message.audio_base64 = await _tts_speech(
+                    message.text, character.voice_description, character.language,
+                    voice_prompt_id=character.voice_prompt_id,
+                )
+                session["narration_index"] = index + 1
+                session["updated_at"] = datetime.now(timezone.utc).isoformat()
+                save_session("story", session)
+                await queue.put({"event": "message", "data": message.model_dump()})
+
+            if session["status"] != "running":
+                break
+            if session.get("volume", 1) >= 10:
+                session["status"] = "finished"
+                session["progress"] = {"percent": 100, "label": "Band 1.9 und die gesamte Serie sind vollständig vertont"}
+                await queue.put({"event": "status", "data": {"status": "finished"}})
+                break
+
+            session["volume"] += 1
+            session["volume_script_ready"] = False
+            session["volume_message_start"] = len(session["messages"])
+            session["narration_index"] = len(session["messages"])
+            session["progress"] = {"percent": 0, "label": f"Band {_volume_label(session['volume'])} startet automatisch"}
             save_session("story", session)
             await queue.put({"event": "progress", "data": session["progress"]})
-            message.audio_base64 = await _tts_speech(
-                message.text, character.voice_description, character.language,
-                voice_prompt_id=character.voice_prompt_id,
-            )
-            session["narration_index"] = index + 1
-            session["updated_at"] = datetime.now(timezone.utc).isoformat()
-            save_session("story", session)
-            await queue.put({"event": "message", "data": message.model_dump()})
-        if session["status"] == "running":
-            session["status"] = "finished"
-            session["progress"] = {"percent": 100, "label": f"Band {_volume_label(session.get('volume', 1))} ist vollständig geschrieben und vertont"}
-            await queue.put({"event": "status", "data": {"status": "finished"}})
     except asyncio.CancelledError:
         session["status"] = "stopped"
     except Exception as exc:
