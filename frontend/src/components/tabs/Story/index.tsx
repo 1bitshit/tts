@@ -13,6 +13,9 @@ export function StoryTab() {
   const [title, setTitle] = useState('Die Uhr der verlorenen Erinnerungen');
   const [premise, setPremise] = useState('Eine Uhrmacherin entdeckt eine Taschenuhr, die fremde Erinnerungen speichert.');
   const [genre, setGenre] = useState('Mystery-Fantasy');
+  const [narratorGender, setNarratorGender] = useState<'female' | 'male'>('female');
+  const [characterGender, setCharacterGender] = useState<'female' | 'male' | 'mixed'>('mixed');
+  const [characterCount, setCharacterCount] = useState(2);
   const [model, setModel] = useState('Qwen/Qwen3-4B-Instruct-2507-GGUF');
   const [deliveryMode, setDeliveryMode] = useState<'live' | 'prerecorded'>('live');
   const [progress, setProgress] = useState({ percent: 0, label: 'Bereit' });
@@ -192,7 +195,11 @@ export function StoryTab() {
   const create = async () => {
     setBusy(true);
     try {
-      const created = await storyApi.createStory({ title, premise, genre, model_name: model, max_scenes: 100, delivery_mode: deliveryMode }, apiKey);
+      const created = await storyApi.createStory({
+        title, premise, genre, model_name: model, max_scenes: 100,
+        delivery_mode: deliveryMode, narrator_gender: narratorGender,
+        character_gender: characterGender, character_count: characterCount,
+      }, apiKey);
       setStory(created);
       await refreshSaved();
       toast.showToast('Geschichte gespeichert und bereit', 'success');
@@ -232,9 +239,32 @@ export function StoryTab() {
     <Card title="📖 Fortlaufende Geschichte" icon={BookOpen}>
       <div className="grid md:grid-cols-2 gap-md">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titel" className="px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" />
-        <input value={genre} onChange={(e) => setGenre(e.target.value)} placeholder="Genre" className="px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" />
+        <select value={genre} onChange={(e) => setGenre(e.target.value)} className="px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Genre">
+          <option value="Mystery-Fantasy">Mystery-Fantasy</option>
+          <option value="Abenteuer">Abenteuer</option>
+          <option value="Science-Fiction">Science-Fiction</option>
+          <option value="Krimi">Krimi</option>
+          <option value="Horror">Horror</option>
+          <option value="Romantik">Romantik</option>
+          <option value="Historisch">Historisch</option>
+          <option value="Märchen">Märchen</option>
+        </select>
       </div>
       <textarea value={premise} onChange={(e) => setPremise(e.target.value)} rows={3} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" />
+      <div className="grid md:grid-cols-3 gap-md mt-md">
+        <select value={narratorGender} onChange={(e) => setNarratorGender(e.target.value as 'female' | 'male')} className="px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Erzählstimme">
+          <option value="female">Erzählstimme: weiblich</option>
+          <option value="male">Erzählstimme: männlich</option>
+        </select>
+        <select value={characterGender} onChange={(e) => setCharacterGender(e.target.value as 'female' | 'male' | 'mixed')} className="px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Figurenstimmen">
+          <option value="mixed">Figurenstimmen: gemischt</option>
+          <option value="female">Figurenstimmen: weiblich</option>
+          <option value="male">Figurenstimmen: männlich</option>
+        </select>
+        <select value={characterCount} onChange={(e) => setCharacterCount(Number(e.target.value))} className="px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Figurenanzahl">
+          {[1, 2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count} {count === 1 ? 'Figur' : 'Figuren'}</option>)}
+        </select>
+      </div>
       <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Story-Modell">
         <option value="Qwen/Qwen3-4B-Instruct-2507-GGUF">Qwen3-4B-Instruct-2507 (empfohlen, getestet)</option>
         <option value="Qwen/Qwen3-1.7B-GGUF">Qwen/Qwen3-1.7B-GGUF (klein, eingeschränkte Qualität)</option>

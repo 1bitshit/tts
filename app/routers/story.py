@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import random
 import re
 import uuid
 from datetime import datetime, timezone
@@ -14,8 +13,8 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.auth import verify_api_key
-from app.routers.debate import _create_speaker_voice_prompt, _tts_speech
-from app.models.manager import get_voice_clone_prompt
+from app.routers.debate import _tts_speech
+from app.models.manager import get_voice_clone_prompt, model_manager, store_voice_clone_prompt
 from app.routers.archive import save_story_to_archive
 from app.services.lm_studio import get_lm_studio_client
 from app.services.session_store import (
@@ -39,6 +38,7 @@ class StoryCharacter(BaseModel):
     model_name: str = ""
     language: str = "German"
     voice_prompt_id: str = ""
+    voice_reference_audio: str = ""
 
 
 class CreateStoryRequest(BaseModel):
@@ -47,6 +47,9 @@ class CreateStoryRequest(BaseModel):
     genre: str = "Fantasy"
     model_name: str = ""
     characters: list[StoryCharacter] = Field(default_factory=list)
+    narrator_gender: str = Field(default="female", pattern="^(female|male)$")
+    character_gender: str = Field(default="mixed", pattern="^(female|male|mixed)$")
+    character_count: int = Field(default=2, ge=1, le=6)
     max_scenes: int = Field(default=100, ge=1, le=1000)
     delay_between_turns: float = Field(default=0.5, ge=0, le=30)
     delivery_mode: str = Field(default="live", pattern="^(live|prerecorded)$")
@@ -62,47 +65,74 @@ class StoryMessage(BaseModel):
 
 
 def _default_characters() -> list[StoryCharacter]:
-    narrator_voices = [
-        "Warme deutsche Altstimme, ruhig, bildhaft und geheimnisvoll",
-        "Klare deutsche Erzählerinnenstimme, lebendig und kinoreif",
-        "Reife deutsche Frauenstimme, sanft, dunkel und spannungsvoll",
-    ]
-    heroine_voices = [
-        "Junge klare deutsche Frauenstimme, mutig und emotional",
-        "Helle deutsche Frauenstimme, neugierig, schnell und ausdrucksstark",
-        "Ruhige deutsche Frauenstimme, entschlossen und nahbar",
-    ]
-    companion_voices = [
-        "Ruhige deutsche Männerstimme mit trockenem Humor",
-        "Warme tiefe deutsche Männerstimme, bedacht und geheimnisvoll",
-        "Junge deutsche Männerstimme, wach, ironisch und loyal",
-    ]
-    profiles = random.sample([
+    return _generated_characters("female", "mixed", 2)
+
+
+def _generated_characters(narrator_gender: str, character_gender: str, count: int) -> list[StoryCharacter]:
+    female_names = ["Mara", "Nora", "Lea", "Amira", "Clara", "Sofia"]
+    male_names = ["Elias", "Noah", "Jonas", "Karim", "David", "Leon"]
+    personalities = [
         "Mutig, neugierig und empathisch; handelt eigenständig und macht glaubwürdige Fehler.",
         "Analytisch und vorsichtig, verbirgt aber eine impulsive Seite.",
         "Willensstark, humorvoll und loyal; stellt unbequeme Fragen.",
-    ], 2)
-    return [
-        StoryCharacter(
-            id="narrator", name="Erzählerin", role="Erzählerin",
-            personality="Du erzählst atmosphärisch, präzise und spannend, ohne die Figuren zu bevormunden.",
-            voice_description=random.choice(narrator_voices),
-        ),
-        StoryCharacter(
-            id="mara", name="Mara", role="Protagonistin",
-            personality=profiles[0],
-            voice_description=random.choice(heroine_voices),
-        ),
-        StoryCharacter(
-            id="elias", name="Elias", role="Begleiter",
-            personality=profiles[1] + " Verfolgt außerdem ein verborgenes Ziel.",
-            voice_description=random.choice(companion_voices),
-        ),
+        "Beobachtet genau, vertraut langsam und schützt die Gruppe in Gefahr.",
+        "Kreativ und spontan; erkennt ungewöhnliche Lösungen, unterschätzt aber Risiken.",
+        "Ruhig und pragmatisch; trägt ein Geheimnis mit sich, das die Handlung verändert.",
     ]
+    narrator = StoryCharacter(
+        id="narrator",
+        name="Erzählerin" if narrator_gender == "female" else "Erzähler",
+        role="Erzählerin" if narrator_gender == "female" else "Erzähler",
+        personality="Erzählt atmosphärisch, präzise und spannend, ohne selbst zur Figur zu werden.",
+        voice_description=(
+            "Warme deutsche Frauenstimme, ruhig, bildhaft und kinoreif"
+            if narrator_gender == "female" else
+            "Warme deutsche Männerstimme, ruhig, bildhaft und kinoreif"
+        ),
+    )
+    characters = [narrator]
+    for index in range(count):
+        gender = character_gender
+        if gender == "mixed":
+            gender = "female" if index % 2 == 0 else "male"
+        name = (female_names if gender == "female" else male_names)[index % 6]
+        characters.append(StoryCharacter(
+            id=f"character_{index + 1}",
+            name=name,
+            role="Hauptfigur" if index == 0 else "Nebenfigur",
+            personality=personalities[index % len(personalities)],
+            voice_description=(
+                "Natürliche deutsche Frauenstimme, klar, eigenständig und emotional"
+                if gender == "female" else
+                "Natürliche deutsche Männerstimme, klar, eigenständig und emotional"
+            ),
+        ))
+    return characters
 
 
 _sessions: dict[str, dict] = {}
 _queues: dict[str, asyncio.Queue] = {}
+
+
+def _normalize_characters(characters: list[StoryCharacter]) -> list[StoryCharacter]:
+    """Keep exactly one narrator and preserve every other story character."""
+    normalized: list[StoryCharacter] = []
+    narrator_seen = False
+    for index, character in enumerate(characters):
+        is_narrator = character.id == "narrator" or character.role.lower() in {"erzählerin", "erzähler"}
+        if is_narrator:
+            if narrator_seen:
+                continue
+            narrator_seen = True
+            character.id = "narrator"
+            if character.role.lower() not in {"erzählerin", "erzähler"}:
+                character.role = "Erzählerin"
+        elif not character.id:
+            character.id = f"character_{index}"
+        normalized.append(character)
+    if not narrator_seen:
+        normalized.insert(0, _default_characters()[0])
+    return normalized
 
 
 def _restore(session_id: str) -> dict | None:
@@ -111,7 +141,9 @@ def _restore(session_id: str) -> dict | None:
     raw = load_session(session_id, "story")
     if not raw:
         return None
-    raw["characters"] = [StoryCharacter(**character) for character in raw.get("characters", [])]
+    raw["characters"] = _normalize_characters([
+        StoryCharacter(**character) for character in raw.get("characters", [])
+    ])
     raw["messages"] = [StoryMessage(**message) for message in raw.get("messages", [])]
     raw["running_task"] = None
     raw["status"] = "stopped" if raw.get("status") == "running" else raw.get("status", "stopped")
@@ -123,12 +155,11 @@ def _restore(session_id: str) -> dict | None:
 @router.post("/create")
 async def create_story(req: CreateStoryRequest, _=Depends(verify_api_key)):
     session_id = str(uuid.uuid4())[:8]
-    characters = req.characters or _default_characters()
-    for index, character in enumerate(characters):
-        if not character.id:
-            character.id = f"character_{index}"
-    if not any(character.id == "narrator" or character.role.lower() == "erzählerin" for character in characters):
-        characters.insert(0, _default_characters()[0])
+    characters = _normalize_characters(
+        req.characters or _generated_characters(
+            req.narrator_gender, req.character_gender, req.character_count
+        )
+    )
     now = datetime.now(timezone.utc).isoformat()
     session = {
         "session_id": session_id,
@@ -235,6 +266,47 @@ async def stream_story(session_id: str):
     )
 
 
+async def _ensure_story_voice(character: StoryCharacter) -> None:
+    """Create once, then rebuild the exact same clone from persisted reference audio."""
+    reference_text = "Ich spreche klar, natürlich und mit gleichmäßiger Betonung."
+
+    def prepare_voice() -> tuple[str, str]:
+        import base64
+        import io
+
+        import numpy as np
+        import soundfile as sf
+
+        reference_b64 = character.voice_reference_audio
+        if reference_b64:
+            reference_audio, sample_rate = sf.read(
+                io.BytesIO(base64.b64decode(reference_b64)), dtype="float32"
+            )
+        else:
+            designed, sample_rate = model_manager.get_voice_design_model().generate_voice_design(
+                text=reference_text,
+                language=character.language or "German",
+                instruct=character.voice_description,
+            )
+            if isinstance(designed, (list, tuple)):
+                designed = designed[0]
+            reference_audio = np.asarray(designed, dtype=np.float32).squeeze()
+            buffer = io.BytesIO()
+            sf.write(buffer, reference_audio, sample_rate, format="WAV")
+            reference_b64 = base64.b64encode(buffer.getvalue()).decode()
+
+        prompt = model_manager.get_base_model().create_voice_clone_prompt(
+            ref_audio=(reference_audio, sample_rate),
+            ref_text=reference_text,
+            x_vector_only_mode=True,
+        )
+        prompt_id = str(uuid.uuid4())[:8]
+        store_voice_clone_prompt(prompt_id, {"prompt_items": prompt})
+        return prompt_id, reference_b64
+
+    character.voice_prompt_id, character.voice_reference_audio = await asyncio.to_thread(prepare_voice)
+
+
 async def _story_loop(session_id: str):
     session = _sessions[session_id]
     queue = _queues[session_id]
@@ -249,8 +321,6 @@ async def _story_loop(session_id: str):
             await queue.put({"event": "turn", "data": {
                 "speaker_id": character.id, "speaker_name": character.name, "scene": scene,
             }})
-            total_turns = session["max_scenes"] * len(characters)
-            completed_turns = session["current_scene"] * len(characters) + index
             await queue.put({"event": "progress", "data": {
                 "percent": 10,
                 "label": f"Text für {character.name} wird erzeugt",
@@ -262,7 +332,7 @@ async def _story_loop(session_id: str):
                     "percent": 15,
                     "label": f"Feste Stimme für {character.name} wird einmalig vorbereitet",
                 }})
-                character.voice_prompt_id = await _create_speaker_voice_prompt(character)
+                await _ensure_story_voice(character)
                 save_session("story", session)
             message = await _generate_turn(session, character, scene, queue)
             session["progress"] = {"percent": 90, "label": f"Audio für {character.name} ist fertig"}
@@ -314,7 +384,7 @@ async def _generate_turn(
         for member in session["characters"]
     )
     memory_block = "\n".join(f"- {memory}" for memory in memories) or "- Noch keine Langzeiterinnerungen."
-    is_narrator = character.id == "narrator" or character.role.lower() == "erzählerin"
+    is_narrator = character.id == "narrator" or character.role.lower() in {"erzählerin", "erzähler"}
     role_rules = (
         "Die Erzählerin beschreibt alles in der dritten Person. Sie ist niemals selbst Figur, "
         "sagt niemals 'ich' und spricht nicht stellvertretend für Mara oder Elias. Sie schildert "
@@ -322,6 +392,11 @@ async def _generate_turn(
         if is_narrator else
         f"{character.name} handelt nur als eigene Figur. Beschreibe eine konkrete Handlung und "
         "natürlichen Dialog; kontrolliere oder vertone keine andere Figur und nicht die Erzählerin."
+    )
+    length_rule = (
+        "5 bis 8 natürliche Sätze mit insgesamt 100 bis 160 Wörtern"
+        if is_narrator else
+        "1 bis 3 natürliche Sätze mit insgesamt 20 bis 50 Wörtern"
     )
     continuity = "\n".join(f"{item.speaker_name}: {item.text}" for item in recent[-8:]) or "Noch kein vorheriger Beitrag."
     system = f"""Du bist Autor einer zusammenhängenden deutschen {session['genre']}-Fortsetzungsgeschichte.
@@ -345,7 +420,7 @@ Regeln:
 - Pro Beitrag muss sich die Situation verändern oder eine neue Information sichtbar werden.
 - Wiederhole weder Handlung, Dialog noch Formulierungen aus dem bisherigen Verlauf.
 - Verrate nicht den gesamten Plot und beende die Geschichte nicht vorzeitig.
-- 5 bis 8 natürliche Sätze mit insgesamt 100 bis 160 Wörtern, vollständig auf Deutsch.
+- {length_rule}, vollständig auf Deutsch.
 - Schreibe eine vollständige, gehaltvolle Passage mit Handlung, Wahrnehmung und einer neuen Konsequenz.
 - Erzählerin beschreibt nur in dritter Person; Figuren handeln und sprechen aus ihrer eigenen Perspektive.
 - Gib ausschließlich den neuen Erzähltext aus: keine Sprecherbezeichnung, keine Wortzahl, keine Erklärung.
@@ -357,7 +432,7 @@ Regeln:
         if is_narrator else
         f"Szene {scene}, Fokusfigur {character.name}. Nur {character.name} handelt oder spricht. "
         "Reagiere auf den unmittelbar letzten Beitrag und treibe die Handlung mit einer neuen Entscheidung voran. "
-        "Schreibe 5 bis 8 Sätze und 100 bis 160 Wörter."
+        "Schreibe nur 1 bis 3 Sätze und 20 bis 50 Wörter."
     )
     messages = [{"role": "system", "content": system}, {"role": "user", "content": turn_instruction}]
     text = ""
@@ -383,10 +458,12 @@ Regeln:
             (is_narrator and bool(re.search(r"\b(?:ich|mich|mein(?:e[rmns]?)?|mir|wir|uns)\b", text, re.IGNORECASE)))
             or (not is_narrator and bool(re.search(r"^Erzählerin\b", text, re.IGNORECASE)))
         )
-        if 85 <= len(words) <= 180 and similarity < 0.52 and not repeated_quote and not wrong_role:
+        min_words, max_words = (85, 180) if is_narrator else (15, 60)
+        if min_words <= len(words) <= max_words and similarity < 0.52 and not repeated_quote and not wrong_role:
             break
         messages.append({"role": "assistant", "content": text})
-        messages.append({"role": "user", "content": "Zu ähnlich, zu kurz oder sprachlich fehlerhaft. Schreibe eine völlig neue, zusammenhängende Passage mit 5 bis 8 Sätzen und 100 bis 160 Wörtern, ohne bekannte Sätze oder Dialoge zu wiederholen."})
+        retry_length = "5 bis 8 Sätze und 100 bis 160 Wörter" if is_narrator else "1 bis 3 Sätze und 20 bis 50 Wörter"
+        messages.append({"role": "user", "content": f"Zu ähnlich, zu kurz oder sprachlich fehlerhaft. Schreibe neu mit {retry_length}, ohne bekannte Sätze oder Dialoge zu wiederholen."})
     if progress_queue is not None:
         preview = {
             "speaker_id": character.id, "speaker_name": character.name,
@@ -415,7 +492,16 @@ Regeln:
 
 
 def _state(session: dict) -> dict:
-    return {
+    state = {
         key: value for key, value in session.items()
         if key != "running_task"
     }
+    state["characters"] = [
+        character.model_dump(exclude={"voice_reference_audio"})
+        if hasattr(character, "model_dump") else {
+            key: value for key, value in character.items()
+            if key != "voice_reference_audio"
+        }
+        for character in session.get("characters", [])
+    ]
+    return state
