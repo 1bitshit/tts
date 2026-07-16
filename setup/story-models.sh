@@ -12,7 +12,8 @@ AUTHOR_QUANT="${STORY_AUTHOR_QUANT:-Q4_K_M}"
 EDITOR_QUANT="${STORY_EDITOR_QUANT:-Q4_K_M}"
 AUTHOR_LOAD_ID="${STORY_AUTHOR_LOAD_ID:-qwen3-14b}"
 EDITOR_LOAD_ID="${STORY_EDITOR_LOAD_ID:-mistral-small-24b-instruct-2501}"
-CONTEXT="${STORY_MODEL_CONTEXT:-32768}"
+AUTHOR_CONTEXT="${STORY_AUTHOR_CONTEXT:-16384}"
+EDITOR_CONTEXT="${STORY_EDITOR_CONTEXT:-24576}"
 TTL="${STORY_MODEL_TTL_SECONDS:-180}"
 
 find_lms() {
@@ -36,24 +37,45 @@ download_role() {
   "$LMS" get --gguf --yes "$spec"
 }
 
+load_once() {
+  local spec="$1" identifier="$2" context="$3" gpu="$4"
+  local args=(load "$spec" --identifier "$identifier" --context-length "$context" --parallel 1 --ttl "$TTL")
+  [ -z "$gpu" ] || args+=(--gpu "$gpu")
+  "$LMS" "${args[@]}"
+}
+
 load_role() {
-  local spec identifier gpu
+  local spec identifier requested_gpu context
   if [ "$1" = "author" ]; then
     spec="$AUTHOR_LOAD_ID"
+    requested_gpu="${STORY_AUTHOR_GPU_OFFLOAD:-max}"
+    context="$AUTHOR_CONTEXT"
   else
     spec="$EDITOR_LOAD_ID"
+    requested_gpu="${STORY_EDITOR_GPU_OFFLOAD:-max}"
+    context="$EDITOR_CONTEXT"
   fi
   identifier="story-$1"
-  if [ "$1" = "author" ]; then
-    gpu="${STORY_AUTHOR_GPU_OFFLOAD:-max}"
-  else
-    gpu="${STORY_EDITOR_GPU_OFFLOAD:-max}"
-  fi
   "$LMS" unload --all >/dev/null 2>&1 || true
-  "$LMS" load "$spec" --identifier "$identifier" --gpu "$gpu" \
-    --context-length "$CONTEXT" --parallel 1 --ttl "$TTL"
+
+  if load_once "$spec" "$identifier" "$context" "$requested_gpu"; then
+    echo "$identifier"
+    return
+  fi
+
+  echo "Primary load failed; retrying with automatic GPU placement." >&2
+  "$LMS" unload --all >/dev/null 2>&1 || true
+  if load_once "$spec" "$identifier" "$context" ""; then
+    echo "$identifier"
+    return
+  fi
+
+  echo "Automatic load failed; retrying with 8192 context and 80% GPU." >&2
+  "$LMS" unload --all >/dev/null 2>&1 || true
+  load_once "$spec" "$identifier" 8192 0.8
   echo "$identifier"
 }
+
 case "$ACTION" in
   download)
     [ -n "$ROLE" ] && download_role "$ROLE" || { download_role author; download_role editor; }
