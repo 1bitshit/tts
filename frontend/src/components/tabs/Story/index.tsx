@@ -26,7 +26,9 @@ export function StoryTab() {
   const seenAudioRef = useRef(new Set<string>());
   const replayAudioRef = useRef<HTMLAudioElement | null>(null);
   const replayCancelledRef = useRef(false);
-  const liveAudioQueueRef = useRef<string[]>([]);
+  const isReplayingRef = useRef(false);
+  const liveAudioQueueRef = useRef<Array<{ key: string; timestamp: string; audio: string }>>([]);
+  const queuedAudioKeysRef = useRef(new Set<string>());
   const liveAudioRef = useRef<HTMLAudioElement | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -45,37 +47,62 @@ export function StoryTab() {
   }, []);
 
   const playLiveQueue = () => {
-    if (liveAudioRef.current || liveAudioQueueRef.current.length === 0) return;
-    const audio = new Audio(`data:audio/wav;base64,${liveAudioQueueRef.current.shift()}`);
+    if (isReplayingRef.current || liveAudioRef.current || liveAudioQueueRef.current.length === 0) return;
+    const nextClip = liveAudioQueueRef.current.shift()!;
+    const audio = new Audio(`data:audio/wav;base64,${nextClip.audio}`);
     liveAudioRef.current = audio;
-    const next = () => { liveAudioRef.current = null; playLiveQueue(); };
+    const next = () => {
+      queuedAudioKeysRef.current.delete(nextClip.key);
+      liveAudioRef.current = null;
+      playLiveQueue();
+    };
     audio.onended = next;
     audio.onerror = next;
     void audio.play().catch(next);
   };
 
-  const enqueueLiveAudio = (audioBase64: string) => {
-    liveAudioQueueRef.current.push(audioBase64);
+  const enqueueLiveAudio = (message: StoryMessage) => {
+    if (!message.audio_base64) return;
+    const key = `${message.timestamp}:${message.speaker_id}`;
+    if (queuedAudioKeysRef.current.has(key)) return;
+    queuedAudioKeysRef.current.add(key);
+    liveAudioQueueRef.current.push({ key, timestamp: message.timestamp, audio: message.audio_base64 });
+    liveAudioQueueRef.current.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
     playLiveQueue();
   };
 
-  const stopReplay = () => {
+  const stopLivePlayback = (clearQueue = false) => {
+    liveAudioRef.current?.pause();
+    liveAudioRef.current = null;
+    if (clearQueue) {
+      liveAudioQueueRef.current = [];
+      queuedAudioKeysRef.current.clear();
+    }
+  };
+
+  const stopReplay = (resumeLive = true) => {
     replayCancelledRef.current = true;
+    isReplayingRef.current = false;
     replayAudioRef.current?.pause();
     replayAudioRef.current = null;
     setIsReplaying(false);
+    if (resumeLive) playLiveQueue();
   };
 
   const replayFromStart = async () => {
     if (!story) return;
-    stopReplay();
+    stopReplay(false);
+    stopLivePlayback(true);
     replayCancelledRef.current = false;
+    isReplayingRef.current = true;
     setIsReplaying(true);
-    const clips = story.messages.flatMap((message) => message.audio_base64 ? [message.audio_base64] : []);
+    const clips = [...story.messages]
+      .filter((message) => message.audio_base64)
+      .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
     for (const clip of clips) {
       if (replayCancelledRef.current) break;
       await new Promise<void>((resolve) => {
-        const audio = new Audio(`data:audio/wav;base64,${clip}`);
+        const audio = new Audio(`data:audio/wav;base64,${clip.audio_base64}`);
         replayAudioRef.current = audio;
         const done = () => { replayAudioRef.current = null; resolve(); };
         audio.onended = done;
@@ -83,7 +110,23 @@ export function StoryTab() {
         void audio.play().catch(done);
       });
     }
-    if (!replayCancelledRef.current) setIsReplaying(false);
+    if (!replayCancelledRef.current) {
+      isReplayingRef.current = false;
+      setIsReplaying(false);
+      playLiveQueue();
+    }
+  };
+
+  const playExclusive = (message: StoryMessage) => {
+    if (!message.audio_base64) return;
+    stopReplay(false);
+    stopLivePlayback(true);
+    const audio = new Audio(`data:audio/wav;base64,${message.audio_base64}`);
+    liveAudioRef.current = audio;
+    const done = () => { liveAudioRef.current = null; playLiveQueue(); };
+    audio.onended = done;
+    audio.onerror = done;
+    void audio.play().catch(done);
   };
 
   const connectStream = (id: string) => {
@@ -103,7 +146,7 @@ export function StoryTab() {
           current_scene: Math.max(current.current_scene, data.scene),
           messages: [...current.messages.filter((item) => !(item.speaker_id === data.speaker_id && item.scene === data.scene)), data as StoryMessage],
         } : current);
-        if (deliveryMode === 'live' && data.audio_base64 && !replayCancelledRef.current && !isReplaying) enqueueLiveAudio(data.audio_base64);
+        if (deliveryMode === 'live' && data.audio_base64) enqueueLiveAudio(data as StoryMessage);
       }
       if (event === 'text') setStory((current) => current ? {
         ...current,
@@ -133,7 +176,7 @@ export function StoryTab() {
         if (fresh.progress && fresh.status === 'running') setProgress(fresh.progress);
         if (newAudio.length > 0) {
           setProgress({ percent: 100, label: `${newAudio.at(-1)?.speaker_name}: Audio fertig und gespeichert` });
-          if (deliveryMode === 'live' && !isReplaying) newAudio.forEach((item) => enqueueLiveAudio(item.audio_base64!));
+          if (deliveryMode === 'live') newAudio.forEach(enqueueLiveAudio);
         } else if (fresh.status === 'running') {
           setProgress((current) => current.percent >= 100 ? { percent: 5, label: 'Nächster Beitrag wird erzeugt' } : current);
         }
@@ -211,7 +254,7 @@ export function StoryTab() {
         {story?.status === 'running' && <Button onClick={stop} variant="danger" icon={Square}>Stoppen & speichern</Button>}
         {story && <Button variant="secondary" onClick={() => setStory(null)}>Andere Geschichte</Button>}
         {story && story.messages.some((message) => message.audio_base64) && !isReplaying && <Button variant="secondary" onClick={replayFromStart} icon={Play}>Von Anfang hören</Button>}
-        {isReplaying && <Button variant="danger" onClick={stopReplay} icon={Square}>Wiedergabe stoppen</Button>}
+        {isReplaying && <Button variant="danger" onClick={() => stopReplay()} icon={Square}>Wiedergabe stoppen</Button>}
       </div>
       {story && <p className="mt-sm text-xs text-text-muted">{story.messages.filter((message) => message.audio_base64).length} Audioclips gespeichert · Live-Audio wird vollständig vorproduziert und bleibt wiederholbar.</p>}
     </Card>
@@ -231,7 +274,7 @@ export function StoryTab() {
         {story.messages.map((message, index) => <div key={`${message.timestamp}-${index}`} className="p-md rounded bg-bg-surface border-l-2 border-accent-cyan">
           <div className="flex items-center gap-sm text-xs text-accent-cyan mb-xs">
             <span>{message.speaker_name}</span><span className="text-text-muted">Szene {message.scene}</span>
-            {message.audio_base64 && <button className="ml-auto" onClick={() => void new Audio(`data:audio/wav;base64,${message.audio_base64}`).play()}><Play size={13} /></button>}
+            {message.audio_base64 && <button className="ml-auto" onClick={() => playExclusive(message)}><Play size={13} /></button>}
           </div>
           <div className={`whitespace-pre-wrap text-sm ${message.text.startsWith('[Schreibt') ? 'text-text-muted animate-pulse' : 'text-text-primary'}`}>{message.text}</div>
         </div>)}
