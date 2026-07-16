@@ -36,6 +36,7 @@ export function StoryTab() {
   const liveAudioRef = useRef<HTMLAudioElement | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const volumeLabel = (volume = 1) => `1.${Math.max(0, volume - 1)}`;
+  const audioKey = (message: Pick<StoryMessage, 'scene' | 'speaker_id'>) => `${message.scene}:${message.speaker_id}`;
 
   const refreshSaved = async () => {
     try { setSaved(await storyApi.listStories(apiKey)); } catch { /* API key may not be set yet */ }
@@ -67,7 +68,7 @@ export function StoryTab() {
 
   const enqueueLiveAudio = (message: StoryMessage) => {
     if (!message.audio_base64) return;
-    const key = `${message.timestamp}:${message.speaker_id}`;
+    const key = audioKey(message);
     if (queuedAudioKeysRef.current.has(key)) return;
     queuedAudioKeysRef.current.add(key);
     liveAudioQueueRef.current.push({ key, timestamp: message.timestamp, audio: message.audio_base64 });
@@ -136,14 +137,14 @@ export function StoryTab() {
   const connectStream = (id: string) => {
     streamRef.current?.abort();
     if (pollRef.current !== null) window.clearInterval(pollRef.current);
-    seenAudioRef.current = new Set(story?.messages.filter((item) => item.audio_base64).map((item) => `${item.timestamp}:${item.speaker_id}`));
+    seenAudioRef.current = new Set(story?.messages.filter((item) => item.audio_base64).map(audioKey));
     streamRef.current = storyApi.streamStory(id, (event, data) => {
       if (event === 'status') {
         setStory((current) => current ? { ...current, status: data.status } : current);
         if (['finished', 'stopped', 'disconnected'].includes(data.status)) setIsGenerating(false);
       }
       if (event === 'message') {
-        seenAudioRef.current.add(`${data.timestamp}:${data.speaker_id}`);
+        seenAudioRef.current.add(audioKey(data as StoryMessage));
         setStory((current) => current ? {
           ...current,
           status: 'running',
@@ -171,7 +172,7 @@ export function StoryTab() {
     pollRef.current = window.setInterval(() => {
       void storyApi.getStory(id, apiKey).then((fresh) => {
         const newAudio = fresh.messages.filter((item) => {
-          const key = `${item.timestamp}:${item.speaker_id}`;
+          const key = audioKey(item);
           if (!item.audio_base64 || seenAudioRef.current.has(key)) return false;
           seenAudioRef.current.add(key);
           return true;

@@ -438,8 +438,8 @@ async def _story_loop(session_id: str):
                 message.audio_base64 = await _tts_speech(
                     tts_text, character.voice_description, character.language,
                     voice_prompt_id=character.voice_prompt_id,
-                    speed=0.76 if is_narrator else 0.84,
-                    emotion_gap=0.42 if is_narrator else 0.30,
+                    speed=1.0,
+                    emotion_gap=0.22 if is_narrator else 0.16,
                     speaker=character.engine_voice,
                 )
                 session["narration_index"] = index + 1
