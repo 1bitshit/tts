@@ -227,6 +227,8 @@ async def _story_loop(session_id: str):
             index = session["current_character_index"] % len(characters)
             character = characters[index]
             scene = session["current_scene"] + 1
+            session["progress"] = {"percent": 5, "label": f"Szene {scene}: {character.name} wird vorbereitet"}
+            save_session("story", session)
             await queue.put({"event": "turn", "data": {
                 "speaker_id": character.id, "speaker_name": character.name, "scene": scene,
             }})
@@ -237,6 +239,8 @@ async def _story_loop(session_id: str):
                 "label": f"Text für {character.name} wird erzeugt",
             }})
             if not character.voice_prompt_id or get_voice_clone_prompt(character.voice_prompt_id) is None:
+                session["progress"] = {"percent": 15, "label": f"Feste Stimme für {character.name} wird einmalig vorbereitet"}
+                save_session("story", session)
                 await queue.put({"event": "progress", "data": {
                     "percent": 15,
                     "label": f"Feste Stimme für {character.name} wird einmalig vorbereitet",
@@ -244,6 +248,8 @@ async def _story_loop(session_id: str):
                 character.voice_prompt_id = await _create_speaker_voice_prompt(character)
                 save_session("story", session)
             message = await _generate_turn(session, character, scene, queue)
+            session["progress"] = {"percent": 90, "label": f"Audio für {character.name} ist fertig"}
+            save_session("story", session)
             await queue.put({"event": "progress", "data": {
                 "percent": 90,
                 "label": f"Stimme für {character.name} ist fertig",
@@ -255,6 +261,7 @@ async def _story_loop(session_id: str):
                 session["current_scene"] = scene
             session["updated_at"] = datetime.now(timezone.utc).isoformat()
             save_session("story", session)
+            session["progress"] = {"percent": 100, "label": f"Szene {scene}: Beitrag gespeichert"}
             await queue.put({"event": "progress", "data": {
                 "percent": 100,
                 "label": "Story gespeichert",
@@ -334,6 +341,8 @@ Regeln:
     )
     messages = [{"role": "system", "content": system}, {"role": "user", "content": turn_instruction}]
     text = ""
+    session["progress"] = {"percent": 30, "label": f"Text für {character.name} wird geschrieben"}
+    save_session("story", session)
     recent_tokens = [set(re.findall(r"[a-zäöüß]{4,}", item.text.lower())) for item in recent[-6:]]
     for attempt in range(3):
         response = await get_lm_studio_client().chat_completion(
@@ -364,6 +373,8 @@ Regeln:
             "percent": 45,
             "label": f"Text für {character.name} fertig · Stimme wird erzeugt",
         }})
+    session["progress"] = {"percent": 45, "label": f"Text für {character.name} fertig · Audio wird gerendert"}
+    save_session("story", session)
     audio = await _tts_speech(
         text, character.voice_description, character.language,
         voice_prompt_id=character.voice_prompt_id,

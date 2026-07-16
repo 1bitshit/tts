@@ -33,6 +33,7 @@ export interface StoryState {
   status: string;
   current_scene: number;
   max_scenes: number;
+  progress?: { percent: number; label: string };
 }
 
 async function json<T>(response: Response): Promise<T> {

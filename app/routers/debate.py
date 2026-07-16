@@ -151,10 +151,11 @@ async def _tts_speech(
 ) -> Optional[str]:
     try:
         if voice_prompt_id:
-            prompt = get_voice_clone_prompt(voice_prompt_id)
-            if not prompt:
+            prompt_data = get_voice_clone_prompt(voice_prompt_id)
+            if not prompt_data:
                 logger.warning(f"Voice prompt {voice_prompt_id} not found, falling back to VoiceDesign")
                 return await _tts_speech_design(text, voice_desc, language)
+            prompt = prompt_data.get("prompt_items", prompt_data)
 
             def _render_clone():
                 base_model = model_manager.get_base_model()
@@ -226,7 +227,7 @@ async def _create_speaker_voice_prompt(speaker: SpeakerConfig) -> str:
         prompt = await asyncio.to_thread(_prepare_voice)
         import uuid as _uuid
         prompt_id = str(_uuid.uuid4())[:8]
-        store_voice_clone_prompt(prompt_id, prompt)
+        store_voice_clone_prompt(prompt_id, {"prompt_items": prompt})
         return prompt_id
     except Exception as e:
         logger.warning(f"Failed to create voice prompt for {speaker.name}: {e}")

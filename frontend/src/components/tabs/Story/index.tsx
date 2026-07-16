@@ -130,6 +130,7 @@ export function StoryTab() {
           return true;
         });
         setStory(fresh);
+        if (fresh.progress && fresh.status === 'running') setProgress(fresh.progress);
         if (newAudio.length > 0) {
           setProgress({ percent: 100, label: `${newAudio.at(-1)?.speaker_name}: Audio fertig und gespeichert` });
           if (deliveryMode === 'live' && !isReplaying) newAudio.forEach((item) => enqueueLiveAudio(item.audio_base64!));
