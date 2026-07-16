@@ -156,7 +156,7 @@ async def _tts_speech(
     speaker: str = "",
 ) -> Optional[str]:
     try:
-        if settings.tts_engine == "c-server":
+        if settings.tts_engine in {"c-server", "rust-server"}:
             try:
                 import base64
                 audio = await synthesize_c_tts(
@@ -313,7 +313,7 @@ async def start_debate(session_id: str, _=Depends(verify_api_key)):
         session["status"] = "stopped"
         return {"status": "error", "message": "LM Studio not reachable"}
 
-    c_engine_ready = settings.tts_engine == "c-server" and await c_tts_is_healthy()
+    c_engine_ready = settings.tts_engine in {"c-server", "rust-server"} and await c_tts_is_healthy()
     # C-engine presets are deterministic and immediately available. The legacy
     # Python engine still uses the Voice Design → Clone pipeline.
     await q.put({"event": "status", "data": {"status": "creating_voices"}})

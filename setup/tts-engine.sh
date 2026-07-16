@@ -96,10 +96,12 @@ start_engine() {
   [ -f "$MODEL_DIR/model.safetensors" ] || { echo "C TTS model is missing. Run: $0 install" >&2; return 1; }
 
   local backend=()
+  local quality_mode="${C_TTS_QUALITY_MODE:-quality}"
   if [ "$(cat "$ENGINE_HOME/backend" 2>/dev/null || echo cpu)" = "cuda" ]; then
-    backend=(--backend cuda --quant-mixed)
+    backend=(--backend cuda)
+    [ "$quality_mode" = "fast" ] && backend+=(--quant-mixed)
   else
-    backend=(--int8)
+    [ "$quality_mode" = "fast" ] && backend+=(--int8)
   fi
   (
     cd "$SOURCE_DIR"

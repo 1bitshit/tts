@@ -113,7 +113,7 @@ async def generate_custom_voice(
     try:
         logger.info(f"Generating custom voice for speaker: {request.speaker}")
 
-        if settings.tts_engine == "c-server":
+        if settings.tts_engine in {"c-server", "rust-server"}:
             wav_bytes = await synthesize_c_tts(
                 request.text, speaker=request.speaker.lower(), language=request.language,
                 rate=request.speed, emotion=request.emotion, instruct=request.instruct,
@@ -191,7 +191,7 @@ async def generate_custom_voice_stream(
     try:
         logger.info(f"Generating custom voice stream for speaker: {request.speaker}")
 
-        if settings.tts_engine == "c-server":
+        if settings.tts_engine in {"c-server", "rust-server"}:
             async def generate_c_stream():
                 yield create_sse_message(json.dumps({"sample_rate": 24000, "format": "s16le"}), "metadata")
                 payload = request.model_dump(exclude={"response_format", "speed"})
@@ -277,7 +277,7 @@ async def generate_custom_voice_batch(
         if request.emotions and len(request.emotions) != len(request.texts):
             raise HTTPException(status_code=400, detail="emotions must have the same length as texts")
 
-        if settings.tts_engine == "c-server":
+        if settings.tts_engine in {"c-server", "rust-server"}:
             instructs = request.instructs or [None] * len(request.texts)
             emotions = request.emotions or [None] * len(request.texts)
             wavs = await asyncio.gather(*[

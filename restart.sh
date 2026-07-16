@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
-mkdir -p .runtime/qwen logs
+mkdir -p .runtime/qwen .runtime/rust-tts logs
 
 if [ -f .env ]; then
   while IFS='=' read -r key value; do
@@ -64,7 +64,11 @@ echo "Building WebUI..."
 if [ ! -d frontend/node_modules ]; then (cd frontend && npm install); fi
 (cd frontend && npm run build)
 
-if [ "${TTS_ENGINE:-c-server}" = "c-server" ]; then
+if [ "${TTS_ENGINE:-rust-server}" = "rust-server" ]; then
+  echo "Restarting C reference engine and Rust TTS service..."
+  bash setup/tts-engine.sh restart
+  bash setup/rust-engine.sh restart
+elif [ "${TTS_ENGINE:-rust-server}" = "c-server" ]; then
   echo "Restarting pure-C TTS engine..."
   bash setup/tts-engine.sh restart
 fi

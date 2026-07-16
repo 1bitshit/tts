@@ -476,7 +476,7 @@ async def _story_loop(session_id: str):
 
 
 async def _prepare_all_voices(session: dict, queue: asyncio.Queue) -> None:
-    c_engine_ready = settings.tts_engine == "c-server" and await c_tts_is_healthy()
+    c_engine_ready = settings.tts_engine in {"c-server", "rust-server"} and await c_tts_is_healthy()
     for character in session["characters"]:
         if c_engine_ready:
             character.engine_voice = character.engine_voice or stable_preset(
