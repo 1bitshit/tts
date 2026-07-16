@@ -357,7 +357,14 @@ async def stream_debate(session_id: str):
         except asyncio.CancelledError:
             pass
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(
+        event_generator(), ping=5,
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 # ── LM Studio management endpoints ──────────────────────────────────
 

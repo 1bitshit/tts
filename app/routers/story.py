@@ -215,7 +215,14 @@ async def stream_story(session_id: str):
         except asyncio.CancelledError:
             pass
 
-    return EventSourceResponse(events())
+    return EventSourceResponse(
+        events(), ping=5,
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 async def _story_loop(session_id: str):
