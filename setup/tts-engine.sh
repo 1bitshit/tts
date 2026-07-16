@@ -114,7 +114,7 @@ start_engine() {
   (
     cd "$SOURCE_DIR"
     QWEN_CUDA_FUSED_TALKER=1 QWEN_CUDA_CONVDEC=1 \
-      nohup ./qwen_tts -d "$MODEL_DIR" "${backend[@]}" --serve "$PORT" --workers 1 \
+      nohup ./qwen_tts -d "$MODEL_DIR" "${backend[@]}" --serve "$PORT" --workers 1 --batch-size 1 \
       </dev/null >"$LOG_FILE" 2>&1 &
     echo "$!" > "$PID_FILE"
   )
