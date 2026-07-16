@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     session_db_path: str = Field(default="./data/sessions.sqlite3")
     data_dir: str = Field(default="./data")
     model_judge_name: str = Field(default="Qwen/Qwen3-0.6B-GGUF")
+    story_author_model: str = Field(default="Qwen/Qwen3-14B-GGUF")
+    story_editor_model: str = Field(default="bartowski/Mistral-Small-24B-Instruct-2501-GGUF")
+    story_model_switching: bool = Field(default=True)
 
     # SSL/HTTPS Configuration
     ssl_enabled: bool = Field(

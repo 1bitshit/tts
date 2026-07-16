@@ -8,7 +8,7 @@ import math
 import re
 from dataclasses import dataclass
 
-from app.services.lm_studio import get_lm_studio_client
+from app.services.story_model_runtime import story_chat_completion
 
 _DIM = 384
 _AUDIO_TAG = re.compile(r"\[(?:sfx|ambience|silence):[^\]]+\]", re.IGNORECASE)
@@ -108,10 +108,10 @@ AUFGABE:
 8. Bei Perspektivwechsel zuerst Ort oder Ereignis hörbar etablieren, dann {role} sprechen lassen.
 9. Keine bekannten Formulierungen oder sinngleichen Wiederholungen aus den letzten Szenen.
 """
-    response = await get_lm_studio_client().chat_completion(
+    response = await story_chat_completion(
+        "editor",
         [{"role": "system", "content": prompt}, {"role": "user", "content": "Erzeuge die endgültige, vertonungsfertige Passage."}],
-        model=model,
-        temperature=0.25,
+        temperature=0.2,
         max_tokens=520,
     )
     edited = response["choices"][0]["message"]["content"].strip()

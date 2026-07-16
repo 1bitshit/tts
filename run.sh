@@ -27,6 +27,7 @@ OPTIONS:
     --dev           Development mode: enable auto-reload
     --with-lms      Start LM Studio plus authenticated API proxy
     --with-beam     Publish Qwen and LM proxy through Beam
+    --download-story-models  Download 14B author and 24B editor models
 
 EXAMPLES:
     # Quick start (auto-detects conda environment)
@@ -68,6 +69,7 @@ DOCKER_MODE=false
 DEV_MODE=false
 WITH_LMS=false
 WITH_BEAM=false
+DOWNLOAD_STORY_MODELS=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -97,6 +99,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-beam)
             WITH_BEAM=true
+            shift
+            ;;
+        --download-story-models)
+            DOWNLOAD_STORY_MODELS=true
             shift
             ;;
         *)
@@ -288,6 +294,37 @@ activate_conda() {
 # Activate first so setup always installs into qwen-tts instead of the caller's
 # root/base Python environment.
 activate_environment
+
+ensure_system_audio_tools() {
+    if command -v sox >/dev/null 2>&1; then
+        echo "✅ SoX available"
+        return
+    fi
+    echo "📦 SoX missing; installing system audio tools..."
+    if command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sox libsox-fmt-all
+    else
+        echo "❌ SoX is required. Install sox and libsox-fmt-all." >&2
+        exit 1
+    fi
+}
+
+report_capabilities() {
+    echo "🔎 Runtime capabilities"
+    command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || echo "   GPU: not detected"
+    command -v cargo >/dev/null 2>&1 && echo "   Rust: $(cargo --version)" || echo "   Rust: unavailable"
+    command -v lms >/dev/null 2>&1 && echo "   LM Studio CLI: available" || echo "   LM Studio CLI: unavailable"
+    echo "   TTS engine: ${TTS_ENGINE:-rust-server}"
+}
+
+ensure_system_audio_tools
+report_capabilities
+
+if [ "$DOWNLOAD_STORY_MODELS" = true ]; then
+    bash "$SCRIPT_DIR/setup/lmstudio.sh" install
+    bash "$SCRIPT_DIR/setup/story-models.sh" download
+fi
 
 if [ "$SETUP_MODE" = true ]; then
     echo ""

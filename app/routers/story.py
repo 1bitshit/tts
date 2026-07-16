@@ -19,6 +19,7 @@ from app.models.manager import get_voice_clone_prompt, model_manager, store_voic
 from app.routers.archive import save_story_to_archive
 from app.services.lm_studio import get_lm_studio_client
 from app.services.story_pipeline import edit_and_direct, rank_candidates
+from app.services.story_model_runtime import story_chat_completion
 from app.services.c_tts import is_healthy as c_tts_is_healthy, stable_preset
 from app.services.session_store import (
     add_memory,
@@ -196,7 +197,8 @@ async def generate_story_idea(req: GenerateStoryIdeaRequest, _=Depends(verify_ap
         "male": "männlich",
         "mixed": "gemischt",
     }[req.character_gender]
-    response = await get_lm_studio_client().chat_completion(
+    response = await story_chat_completion(
+        "editor",
         [{
             "role": "system",
             "content": (
@@ -214,8 +216,7 @@ async def generate_story_idea(req: GenerateStoryIdeaRequest, _=Depends(verify_ap
                 "Die Handlung muss zehn fortlaufende Bände mit je ungefähr 23 Minuten tragen können."
             ),
         }],
-        model=req.model_name,
-        temperature=0.9,
+        temperature=0.72,
         max_tokens=320,
     )
     content = response["choices"][0]["message"]["content"].strip()
@@ -606,9 +607,10 @@ Regeln:
     previous_words = re.findall(r"[a-zäöüß]+", " ".join(item.text.lower() for item in recent[-14:]))
     previous_ngrams = {tuple(previous_words[i:i + 6]) for i in range(max(0, len(previous_words) - 5))}
     for attempt in range(3):
-        response = await get_lm_studio_client().chat_completion(
-            messages, model=character.model_name or session["model_name"],
-            temperature=0.68 + attempt * 0.06, max_tokens=420,
+        response = await story_chat_completion(
+            "author",
+            messages,
+            temperature=0.7 + attempt * 0.05, max_tokens=520,
         )
         text = response["choices"][0]["message"]["content"].strip()
         text = re.sub(r"^(?:Erzählerin|Mara|Elias)\s*[:.\-—]\s*", "", text, flags=re.IGNORECASE)
@@ -649,7 +651,7 @@ Regeln:
         ranked,
         [item.text for item in recent],
         story_context,
-        character.model_name or session["model_name"],
+        settings.story_editor_model,
         is_narrator,
     )
 
