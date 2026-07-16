@@ -1,6 +1,7 @@
 """Persistent German story mode with narrator, characters, TTS and RAG memory."""
 
 import asyncio
+import json
 import logging
 import random
 import uuid
@@ -207,7 +208,7 @@ async def stream_story(session_id: str):
                 message = await queue.get()
                 if message is None:
                     break
-                yield message
+                yield {**message, "data": json.dumps(message["data"], ensure_ascii=False)}
         except asyncio.CancelledError:
             pass
 

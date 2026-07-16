@@ -352,7 +352,7 @@ async def stream_debate(session_id: str):
                 msg = await q.get()
                 if msg is None:
                     break
-                yield msg
+                yield {**msg, "data": json.dumps(msg["data"], ensure_ascii=False)}
         except asyncio.CancelledError:
             pass
 
