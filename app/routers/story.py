@@ -135,7 +135,11 @@ async def create_story(req: CreateStoryRequest, _=Depends(verify_api_key)):
         "title": req.title,
         "premise": req.premise,
         "genre": req.genre,
-        "model_name": req.model_name,
+        "model_name": (
+            "Qwen/Qwen3-1.7B-GGUF"
+            if not req.model_name or "0.6B" in req.model_name
+            else req.model_name
+        ),
         "characters": characters,
         "messages": [],
         "status": "idle",
@@ -357,15 +361,20 @@ Regeln:
             temperature=0.68 + attempt * 0.08, max_tokens=150,
         )
         text = response["choices"][0]["message"]["content"].strip()
-        text = re.sub(r"^(?:Erzählerin|Mara|Elias)\s*:\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"^(?:Erzählerin|Mara|Elias)\s*[:.\-—]\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"\s*\(\s*\d+\s+Wörter\s*\)\s*$", "", text, flags=re.IGNORECASE)
         tokens = set(re.findall(r"[a-zäöüß]{4,}", text.lower()))
+        words = re.findall(r"\b[\wÄÖÜäöüß'-]+\b", text)
         similarity = max((len(tokens & old) / max(1, len(tokens | old)) for old in recent_tokens), default=0)
         repeated_quote = any(
             quote.lower() in " ".join(item.text.lower() for item in recent[-6:])
             for quote in re.findall(r"[„\"]([^“\"]+)[“\"]", text)
         )
-        if len(tokens) >= 8 and similarity < 0.58 and not repeated_quote:
+        wrong_role = (
+            (is_narrator and bool(re.search(r"\b(?:ich|mich|mein(?:e[rmns]?)?|mir|wir|uns)\b", text, re.IGNORECASE)))
+            or (not is_narrator and bool(re.search(r"^Erzählerin\b", text, re.IGNORECASE)))
+        )
+        if 18 <= len(words) <= 65 and similarity < 0.52 and not repeated_quote and not wrong_role:
             break
         messages.append({"role": "assistant", "content": text})
         messages.append({"role": "user", "content": "/no_think\nZu ähnlich oder sprachlich fehlerhaft. Schreibe einen völlig neuen nächsten Handlungsschritt ohne bekannte Sätze oder Dialoge zu wiederholen."})
