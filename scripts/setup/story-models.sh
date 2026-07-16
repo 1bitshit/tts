@@ -9,7 +9,7 @@ cd "$ROOT"
 done < .env
 LMS="${LMS_BIN:-$HOME/.lmstudio/bin/lms}"
 [ -x "$LMS" ] || { echo "lms fehlt; zuerst ./setup/lmstudio.sh install" >&2; exit 1; }
-MODELS="${STORY_SETUP_MODELS:-Qwen/Qwen3-1.7B-GGUF}"
+MODELS="${STORY_SETUP_MODELS:-byteshape/Qwen3-4B-Instruct-2507-GGUF}"
 IFS=',' read -ra items <<< "$MODELS"
 for model in "${items[@]}"; do
   [[ "$model" == http* ]] || model="https://huggingface.co/$model"

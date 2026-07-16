@@ -136,8 +136,8 @@ async def create_story(req: CreateStoryRequest, _=Depends(verify_api_key)):
         "premise": req.premise,
         "genre": req.genre,
         "model_name": (
-            "Qwen/Qwen3-1.7B-GGUF"
-            if not req.model_name or "0.6B" in req.model_name
+            "Qwen/Qwen3-4B-Instruct-2507-GGUF"
+            if not req.model_name or "0.6B" in req.model_name or "1.7B" in req.model_name
             else req.model_name
         ),
         "characters": characters,
@@ -178,10 +178,10 @@ async def start_story(session_id: str, _=Depends(verify_api_key)):
         raise HTTPException(404, "Story not found")
     if session["status"] == "running":
         return {"status": "running", "session_id": session_id}
-    if not session.get("model_name") or "0.6B" in session["model_name"]:
-        session["model_name"] = "Qwen/Qwen3-1.7B-GGUF"
+    if not session.get("model_name") or "0.6B" in session["model_name"] or "1.7B" in session["model_name"]:
+        session["model_name"] = "Qwen/Qwen3-4B-Instruct-2507-GGUF"
         for character in session.get("characters", []):
-            if character.model_name and "0.6B" in character.model_name:
+            if character.model_name and ("0.6B" in character.model_name or "1.7B" in character.model_name):
                 character.model_name = ""
         save_session("story", session)
     if not await get_lm_studio_client().is_healthy():

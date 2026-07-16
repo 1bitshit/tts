@@ -120,7 +120,7 @@ async def job(job_id: str, _=Depends(verify_api_key)):
 async def setup_models(kind: str, tasks: BackgroundTasks, _=Depends(verify_api_key)):
     if kind not in CATALOG:
         raise HTTPException(404, "Unknown model kind")
-    default = "Qwen/Qwen3-0.6B-GGUF" if kind == "debate" else "Qwen/Qwen3-1.7B-GGUF"
+    default = "Qwen/Qwen3-0.6B-GGUF" if kind == "debate" else "byteshape/Qwen3-4B-Instruct-2507-GGUF"
     return await download_model(ModelAction(model_id=default, kind=kind), tasks, _)
 
 

@@ -13,7 +13,7 @@ export function StoryTab() {
   const [title, setTitle] = useState('Die Uhr der verlorenen Erinnerungen');
   const [premise, setPremise] = useState('Eine Uhrmacherin entdeckt eine Taschenuhr, die fremde Erinnerungen speichert.');
   const [genre, setGenre] = useState('Mystery-Fantasy');
-  const [model, setModel] = useState('Qwen/Qwen3-1.7B-GGUF');
+  const [model, setModel] = useState('Qwen/Qwen3-4B-Instruct-2507-GGUF');
   const [deliveryMode, setDeliveryMode] = useState<'live' | 'prerecorded'>('live');
   const [progress, setProgress] = useState({ percent: 0, label: 'Bereit' });
   const [story, setStory] = useState<StoryState | null>(null);
@@ -193,7 +193,8 @@ export function StoryTab() {
       </div>
       <textarea value={premise} onChange={(e) => setPremise(e.target.value)} rows={3} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" />
       <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Story-Modell">
-        <option value="Qwen/Qwen3-1.7B-GGUF">Qwen/Qwen3-1.7B-GGUF (bessere Storys)</option>
+        <option value="Qwen/Qwen3-4B-Instruct-2507-GGUF">Qwen3-4B-Instruct-2507 (empfohlen, getestet)</option>
+        <option value="Qwen/Qwen3-1.7B-GGUF">Qwen/Qwen3-1.7B-GGUF (klein, eingeschränkte Qualität)</option>
         <option value="Qwen/Qwen3-0.6B-GGUF">Qwen/Qwen3-0.6B-GGUF (experimentell, schwache Langform)</option>
       </select>
       <select value={deliveryMode} onChange={(e) => setDeliveryMode(e.target.value as 'live' | 'prerecorded')} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Story-Wiedergabemodus">
