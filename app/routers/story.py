@@ -178,6 +178,12 @@ async def start_story(session_id: str, _=Depends(verify_api_key)):
         raise HTTPException(404, "Story not found")
     if session["status"] == "running":
         return {"status": "running", "session_id": session_id}
+    if not session.get("model_name") or "0.6B" in session["model_name"]:
+        session["model_name"] = "Qwen/Qwen3-1.7B-GGUF"
+        for character in session.get("characters", []):
+            if character.model_name and "0.6B" in character.model_name:
+                character.model_name = ""
+        save_session("story", session)
     if not await get_lm_studio_client().is_healthy():
         raise HTTPException(503, "LM Studio is not reachable")
     session["status"] = "running"
