@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -298,7 +299,8 @@ async def _generate_turn(
         f"{character.name} handelt nur als eigene Figur. Beschreibe eine konkrete Handlung und "
         "natürlichen Dialog; kontrolliere oder vertone keine andere Figur und nicht die Erzählerin."
     )
-    system = f"""Du schreibst eine fortlaufende deutsche {session['genre']}-Geschichte wie eine lebendige Sims-Simulation.
+    continuity = "\n".join(f"{item.speaker_name}: {item.text}" for item in recent[-8:]) or "Noch kein vorheriger Beitrag."
+    system = f"""Du bist Autor einer zusammenhängenden deutschen {session['genre']}-Fortsetzungsgeschichte.
 Titel: {session['title']}
 Prämisse: {session['premise']}
 Figuren:
@@ -311,35 +313,46 @@ Rollenregeln: {role_rules}
 RAG-Erinnerungen aus früheren Szenen:
 {memory_block}
 
+Unmittelbarer bisheriger Verlauf (nur als Kontext, niemals kopieren):
+{continuity}
+
 Regeln:
-- Führe Handlung und Figuren konsequent fort.
-- Erfinde pro Beitrag eine neue konkrete Entwicklung.
-- Wiederhole weder Formulierungen noch bereits erzählte Ereignisse aus den RAG-Erinnerungen.
+- Setze exakt bei der letzten Handlung an und verursache eine neue, logische Folge.
+- Pro Beitrag muss sich die Situation verändern oder eine neue Information sichtbar werden.
+- Wiederhole weder Handlung, Dialog noch Formulierungen aus dem bisherigen Verlauf.
 - Verrate nicht den gesamten Plot und beende die Geschichte nicht vorzeitig.
-- 1 bis 2 kurze Sätze mit insgesamt höchstens 45 Wörtern, vollständig auf Deutsch.
-- Jede Runde enthält eine greifbare Handlung, zum Beispiel Kaffee kochen, etwas suchen, essen, aufräumen, arbeiten, streiten oder einen Raum verlassen.
+- 2 bis 3 natürliche Sätze mit insgesamt 25 bis 60 Wörtern, vollständig auf Deutsch.
 - Erzählerin beschreibt nur in dritter Person; Figuren handeln und sprechen aus ihrer eigenen Perspektive.
+- Gib ausschließlich den neuen Erzähltext aus: keine Sprecherbezeichnung, keine Wortzahl, keine Erklärung.
 - Nutze sparsam TTS-Emotions-Tags wie (calm), (tense), (whispering), (excited)."""
-    messages = [{"role": "system", "content": system}]
-    for item in recent:
-        messages.append({"role": "user", "content": f"{item.speaker_name}: {item.text}"})
     turn_instruction = (
-        f"/no_think\nSzene {scene}. Schreibe exakt 1 bis 2 kurze Erzählsätze in der dritten Person, maximal 45 Wörter. "
-        "Beginne den ersten Satz mit 'Mara'. Nutze keines der Wörter Ich, mich, mein oder wir. "
-        "Beschreibe nur beobachtbare Sims-artige Handlungen und deren direkte Folge. "
-        "Stilbeispiel: 'Mara kocht den letzten Kaffee. Elias öffnet den leeren Schrank und seufzt.'"
+        f"/no_think\nSzene {scene}, Erzählerin. Beschreibe in dritter Person, was als Nächstes geschieht. "
+        "Greife das letzte konkrete Detail auf, führe es aber zu einer neuen Entdeckung oder Konsequenz. Keine Dialogwiederholung."
         if is_narrator else
-        f"/no_think\nSzene {scene}. {character.name} ist an der Reihe. Beginne mit einer konkreten "
-        f"Handlung von {character.name}, danach darf ein sehr kurzer natürlicher Dialog folgen. Maximal 45 Wörter."
+        f"/no_think\nSzene {scene}, Fokusfigur {character.name}. Nur {character.name} handelt oder spricht. "
+        "Reagiere auf den unmittelbar letzten Beitrag und treibe die Handlung mit einer neuen Entscheidung voran."
     )
-    messages.append({"role": "user", "content": turn_instruction})
-    response = await get_lm_studio_client().chat_completion(
-        messages,
-        model=character.model_name or session["model_name"],
-        temperature=0.92,
-        max_tokens=180,
-    )
-    text = response["choices"][0]["message"]["content"].strip()
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": turn_instruction}]
+    text = ""
+    recent_tokens = [set(re.findall(r"[a-zäöüß]{4,}", item.text.lower())) for item in recent[-6:]]
+    for attempt in range(3):
+        response = await get_lm_studio_client().chat_completion(
+            messages, model=character.model_name or session["model_name"],
+            temperature=0.68 + attempt * 0.08, max_tokens=150,
+        )
+        text = response["choices"][0]["message"]["content"].strip()
+        text = re.sub(r"^(?:Erzählerin|Mara|Elias)\s*:\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*\(\s*\d+\s+Wörter\s*\)\s*$", "", text, flags=re.IGNORECASE)
+        tokens = set(re.findall(r"[a-zäöüß]{4,}", text.lower()))
+        similarity = max((len(tokens & old) / max(1, len(tokens | old)) for old in recent_tokens), default=0)
+        repeated_quote = any(
+            quote.lower() in " ".join(item.text.lower() for item in recent[-6:])
+            for quote in re.findall(r"[„\"]([^“\"]+)[“\"]", text)
+        )
+        if len(tokens) >= 8 and similarity < 0.58 and not repeated_quote:
+            break
+        messages.append({"role": "assistant", "content": text})
+        messages.append({"role": "user", "content": "/no_think\nZu ähnlich oder sprachlich fehlerhaft. Schreibe einen völlig neuen nächsten Handlungsschritt ohne bekannte Sätze oder Dialoge zu wiederholen."})
     if progress_queue is not None:
         preview = {
             "speaker_id": character.id, "speaker_name": character.name,
