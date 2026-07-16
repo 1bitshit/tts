@@ -22,8 +22,8 @@ LMS="$(find_lms | head -n1)"
 [ -n "$LMS" ] || { echo "lms not installed" >&2; exit 1; }
 model_for_role() {
   case "$1" in
-    author) printf '%s:%s\n' "$AUTHOR_MODEL" "$AUTHOR_QUANT" ;;
-    editor) printf '%s:%s\n' "$EDITOR_MODEL" "$EDITOR_QUANT" ;;
+    author) printf '%s@%s\n' "$AUTHOR_MODEL" "$AUTHOR_QUANT" ;;
+    editor) printf '%s@%s\n' "$EDITOR_MODEL" "$EDITOR_QUANT" ;;
     *) echo "role must be author or editor" >&2; exit 2 ;;
   esac
 }
@@ -31,7 +31,7 @@ model_for_role() {
 download_role() {
   local spec
   spec="$(model_for_role "$1")"
-  "$LMS" get "$spec"
+  "$LMS" get --gguf --yes "$spec"
 }
 
 load_role() {
