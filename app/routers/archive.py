@@ -61,6 +61,8 @@ def save_debate_to_archive(session_id: str, debate_data: dict):
     entry = {
         "session_id": session_id,
         "topic": debate_data.get("topic", ""),
+        "category": debate_data.get("category", "Allgemein"),
+        "teaser": debate_data.get("teaser", ""),
         "speakers": [
             {"id": s.id, "name": s.name, "personality": s.personality[:100], "voice_description": s.voice_description}
             for s in debate_data.get("speakers", [])
@@ -120,6 +122,8 @@ async def list_archived_debates(_=Depends(verify_api_key)):
         {
             "session_id": d["session_id"],
             "topic": d["topic"],
+            "category": d.get("category", "Allgemein"),
+            "teaser": d.get("teaser", ""),
             "speakers": d["speakers"],
             "status": d["status"],
             "current_round": d["current_round"],

@@ -43,6 +43,8 @@ class SpeakerConfig(BaseModel):
 
 class CreateDebateRequest(BaseModel):
     topic: str = Field(..., min_length=1)
+    category: str = "Allgemein"
+    teaser: str = ""
     speakers: List[SpeakerConfig] = Field(default_factory=lambda: _default_speakers())
     max_rounds: int = Field(default=10, ge=1, le=100)
     auto_advance: bool = True
@@ -76,6 +78,8 @@ class DebateMessage(BaseModel):
 class DebateState(BaseModel):
     session_id: str
     topic: str
+    category: str = "Allgemein"
+    teaser: str = ""
     speakers: List[SpeakerConfig]
     messages: List[DebateMessage]
     status: str  # idle | running | paused | stopped | finished
@@ -341,6 +345,8 @@ async def create_debate(req: CreateDebateRequest, _=Depends(verify_api_key)):
     session = {
         "session_id": session_id,
         "topic": req.topic,
+        "category": req.category,
+        "teaser": req.teaser,
         "speakers": req.speakers,
         "messages": [],
         "status": "idle",
@@ -360,6 +366,8 @@ async def create_debate(req: CreateDebateRequest, _=Depends(verify_api_key)):
     return {
         "session_id": session_id,
         "topic": req.topic,
+        "category": req.category,
+        "teaser": req.teaser,
         "speakers": [s.model_dump() for s in req.speakers],
         "status": "idle",
     }
@@ -742,6 +750,8 @@ def _session_to_state(session: dict) -> DebateState:
     return DebateState(
         session_id=session["session_id"],
         topic=session["topic"],
+        category=session.get("category", "Allgemein"),
+        teaser=session.get("teaser", ""),
         speakers=session["speakers"],
         messages=session["messages"],
         status=session["status"],

@@ -20,6 +20,8 @@ export interface DebateMessage {
 export interface DebateState {
   session_id: string;
   topic: string;
+  category?: string;
+  teaser?: string;
   speakers: SpeakerConfig[];
   messages: DebateMessage[];
   status: 'idle' | 'running' | 'paused' | 'stopped' | 'finished';
@@ -31,6 +33,8 @@ export interface DebateState {
 
 export interface CreateDebateRequest {
   topic: string;
+  category?: string;
+  teaser?: string;
   speakers: SpeakerConfig[];
   max_rounds: number;
   auto_advance: boolean;

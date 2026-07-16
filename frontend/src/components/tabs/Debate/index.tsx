@@ -73,6 +73,7 @@ export function DebateTab() {
   const [category, setCategory] = useState('Politik');
   const [ideaBusy, setIdeaBusy] = useState(false);
   const [teaser, setTeaser] = useState('');
+  const [savedDebates, setSavedDebates] = useState<Array<{ session_id: string; topic: string; status: string; message_count: number; updated_at: string }>>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'creating_voices' | 'running' | 'stopped' | 'finished' | 'disconnected'>('idle');
   const [speakers, setSpeakers] = useState<SpeakerConfig[]>(DEFAULT_DEBATE_SPEAKERS);
@@ -96,6 +97,12 @@ export function DebateTab() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const refreshSavedDebates = useCallback(async () => {
+    try { setSavedDebates(await debateService.listDebateSessions(apiKey)); } catch { /* API key may not be configured yet */ }
+  }, [apiKey]);
+
+  useEffect(() => { void refreshSavedDebates(); }, [refreshSavedDebates]);
 
   // Auto-play new messages
   useEffect(() => {
@@ -132,6 +139,23 @@ export function DebateTab() {
     toast.showToast('Debatte zurückgesetzt', 'success');
   }, [abortController, toast]);
 
+
+  const resumeDebate = useCallback(async (id: string) => {
+    try {
+      const saved = await debateService.getDebate(id);
+      setSessionId(saved.session_id);
+      setTopic(saved.topic);
+      setCategory(saved.category || 'Allgemein');
+      setTeaser(saved.teaser || '');
+      setSpeakers(saved.speakers);
+      setMessages(saved.messages);
+      setStatus(saved.status === 'running' || saved.status === 'paused' ? 'stopped' : saved.status);
+      toast.showToast('Gespeicherte Debatte geladen', 'success');
+    } catch (e: any) {
+      toast.showToast(e.message || 'Debatte konnte nicht geladen werden', 'error');
+    }
+  }, [toast]);
+
   const handleCreate = useCallback(async () => {
     if (!topic.trim()) {
       toast.showToast(t('debateNoTopic'), 'warning');
@@ -142,15 +166,16 @@ export function DebateTab() {
       return;
     }
     try {
-      const result = await debateService.createDebate({ topic, speakers, max_rounds: 10, auto_advance: true, delay_between_speakers: 1.5, delivery_mode: deliveryMode }, apiKey);
+      const result = await debateService.createDebate({ topic, category, teaser, speakers, max_rounds: 10, auto_advance: true, delay_between_speakers: 1.5, delivery_mode: deliveryMode }, apiKey);
       setSessionId(result.session_id);
       setMessages([]);
       setStatus('idle');
+      await refreshSavedDebates();
       toast.showToast(t('debateCreated'), 'success');
     } catch (e: any) {
       toast.showToast(e.message || t('debateCreateError'), 'error');
     }
-  }, [topic, speakers, deliveryMode, apiKey, toast, t]);
+  }, [topic, category, teaser, speakers, deliveryMode, apiKey, toast, t, refreshSavedDebates]);
 
   const handleStart = useCallback(async () => {
     if (!sessionId) return;
@@ -337,6 +362,17 @@ export function DebateTab() {
           </div>}
         </div>
       </Card>
+
+
+      {!sessionId && <Card title="Gespeicherte Debatten">
+        <div className="space-y-sm">
+          {savedDebates.length === 0 && <p className="text-text-muted">Noch keine Debatten gespeichert.</p>}
+          {savedDebates.map(item => <button key={item.session_id} onClick={() => resumeDebate(item.session_id)} className="w-full p-md text-left rounded bg-bg-surface border border-border-subtle hover:border-accent-cyan">
+            <div className="text-text-primary font-semibold">{item.topic}</div>
+            <div className="text-xs text-text-muted">{item.message_count} Beiträge · {item.status} · {new Date(item.updated_at).toLocaleString()}</div>
+          </button>)}
+        </div>
+      </Card>}
 
       {/* Pre-recorded Audio Clips */}
       <Card title="Audio-Clips" icon={Music}>

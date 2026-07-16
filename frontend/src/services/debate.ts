@@ -9,6 +9,13 @@ import type {
 
 const BASE = () => `${CONFIG.baseUrl}/api/v1/debate`;
 
+
+export async function listDebateSessions(apiKey: string): Promise<Array<{ session_id: string; topic: string; status: string; message_count: number; updated_at: string }>> {
+  const resp = await fetch(`${BASE()}/sessions`, { headers: getHeaders(apiKey, '') });
+  if (!resp.ok) throw new Error('Failed to list debates');
+  return resp.json();
+}
+
 export async function createDebate(req: CreateDebateRequest, apiKey: string) {
   const resp = await fetch(`${BASE()}/create`, {
     method: 'POST',

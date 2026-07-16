@@ -10,6 +10,8 @@ AUTHOR_MODEL="${STORY_AUTHOR_MODEL:-Qwen/Qwen3-14B-GGUF}"
 EDITOR_MODEL="${STORY_EDITOR_MODEL:-bartowski/Mistral-Small-24B-Instruct-2501-GGUF}"
 AUTHOR_QUANT="${STORY_AUTHOR_QUANT:-Q4_K_M}"
 EDITOR_QUANT="${STORY_EDITOR_QUANT:-Q4_K_M}"
+AUTHOR_LOAD_ID="${STORY_AUTHOR_LOAD_ID:-qwen3-14b}"
+EDITOR_LOAD_ID="${STORY_EDITOR_LOAD_ID:-mistral-small-24b-instruct-2501}"
 CONTEXT="${STORY_MODEL_CONTEXT:-32768}"
 TTL="${STORY_MODEL_TTL_SECONDS:-180}"
 
@@ -36,7 +38,11 @@ download_role() {
 
 load_role() {
   local spec identifier gpu
-  spec="$(model_for_role "$1")"
+  if [ "$1" = "author" ]; then
+    spec="$AUTHOR_LOAD_ID"
+  else
+    spec="$EDITOR_LOAD_ID"
+  fi
   identifier="story-$1"
   if [ "$1" = "author" ]; then
     gpu="${STORY_AUTHOR_GPU_OFFLOAD:-max}"
@@ -45,7 +51,7 @@ load_role() {
   fi
   "$LMS" unload --all >/dev/null 2>&1 || true
   "$LMS" load "$spec" --identifier "$identifier" --gpu "$gpu" \
-    --context-length "$CONTEXT" --parallel 1 --ttl "$TTL" --yes
+    --context-length "$CONTEXT" --parallel 1 --ttl "$TTL"
   echo "$identifier"
 }
 case "$ACTION" in
