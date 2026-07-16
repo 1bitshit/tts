@@ -19,6 +19,25 @@ running() {
   kill -0 "$pid" 2>/dev/null && grep -q 'qwen_tts' "/proc/$pid/cmdline" 2>/dev/null
 }
 
+cuda_arch_flags() {
+  local supported actual selected arch
+  supported="$(nvcc --list-gpu-code 2>/dev/null | sed -n 's/.*\(sm_[0-9][0-9]*\).*/\1/p' | sort -Vu)"
+  [ -n "$supported" ] || return 1
+
+  actual="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null \
+    | head -1 | tr -d '.' || true)"
+  if [[ "$actual" =~ ^[0-9]+$ ]] && grep -qx "sm_$actual" <<<"$supported"; then
+    selected="$actual"
+  else
+    # An older toolkit cannot emit a cubin for a newer GPU. Its newest PTX is
+    # forward-JIT compatible, so use the highest architecture nvcc knows.
+    selected="$(sed 's/^sm_//' <<<"$supported" | sort -n | tail -1)"
+  fi
+  [ -n "$selected" ] || return 1
+  arch="compute_$selected"
+  printf '%s' "-gencode arch=$arch,code=sm_$selected -gencode arch=$arch,code=$arch"
+}
+
 install_engine() {
   if [ ! -d "$SOURCE_DIR/.git" ]; then
     git clone --depth 1 https://github.com/gabriele-mastrapasqua/qwen3-tts.git "$SOURCE_DIR"
@@ -32,8 +51,21 @@ install_engine() {
   fi
 
   if command -v nvcc >/dev/null 2>&1; then
-    make -C "$SOURCE_DIR" cuda
-    echo cuda > "$ENGINE_HOME/backend"
+    local nvcc_arch
+    if nvcc_arch="$(cuda_arch_flags)"; then
+      echo "Building CUDA backend with: $nvcc_arch"
+      if make -C "$SOURCE_DIR" cuda NVCC_ARCH="$nvcc_arch"; then
+        echo cuda > "$ENGINE_HOME/backend"
+      else
+        echo "CUDA build failed; rebuilding with OpenBLAS so audio remains available." >&2
+        make -C "$SOURCE_DIR" blas
+        echo cpu > "$ENGINE_HOME/backend"
+      fi
+    else
+      echo "Could not determine an nvcc architecture; building OpenBLAS backend." >&2
+      make -C "$SOURCE_DIR" blas
+      echo cpu > "$ENGINE_HOME/backend"
+    fi
   else
     echo "nvcc not found; building the OpenBLAS CPU backend." >&2
     make -C "$SOURCE_DIR" blas
