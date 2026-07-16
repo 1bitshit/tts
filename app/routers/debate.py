@@ -162,7 +162,10 @@ async def _tts_speech(
 
                 def _generate(instruct: str, segment_text: str, **kw) -> tuple:
                     return base_model.generate_voice_clone(
-                        text=f"{instruct} {segment_text}".strip() if instruct else segment_text,
+                        # The voice characteristics are already encoded in the
+                        # clone prompt. Never prepend instructions here: they
+                        # would be spoken aloud and make the voice drift.
+                        text=segment_text,
                         language=language,
                         voice_clone_prompt=prompt,
                     )

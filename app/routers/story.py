@@ -345,16 +345,19 @@ Regeln:
 - Pro Beitrag muss sich die Situation verändern oder eine neue Information sichtbar werden.
 - Wiederhole weder Handlung, Dialog noch Formulierungen aus dem bisherigen Verlauf.
 - Verrate nicht den gesamten Plot und beende die Geschichte nicht vorzeitig.
-- 2 bis 3 natürliche Sätze mit insgesamt 25 bis 60 Wörtern, vollständig auf Deutsch.
+- 5 bis 8 natürliche Sätze mit insgesamt 100 bis 160 Wörtern, vollständig auf Deutsch.
+- Schreibe eine vollständige, gehaltvolle Passage mit Handlung, Wahrnehmung und einer neuen Konsequenz.
 - Erzählerin beschreibt nur in dritter Person; Figuren handeln und sprechen aus ihrer eigenen Perspektive.
 - Gib ausschließlich den neuen Erzähltext aus: keine Sprecherbezeichnung, keine Wortzahl, keine Erklärung.
 - Nutze sparsam TTS-Emotions-Tags wie (calm), (tense), (whispering), (excited)."""
     turn_instruction = (
-        f"/no_think\nSzene {scene}, Erzählerin. Beschreibe in dritter Person, was als Nächstes geschieht. "
-        "Greife das letzte konkrete Detail auf, führe es aber zu einer neuen Entdeckung oder Konsequenz. Keine Dialogwiederholung."
+        f"Szene {scene}, Erzählerin. Beschreibe in dritter Person eine längere zusammenhängende Passage. "
+        "Greife das letzte konkrete Detail auf, führe es aber zu einer neuen Entdeckung oder Konsequenz. "
+        "Keine Dialogwiederholung. Schreibe 5 bis 8 Sätze und 100 bis 160 Wörter."
         if is_narrator else
-        f"/no_think\nSzene {scene}, Fokusfigur {character.name}. Nur {character.name} handelt oder spricht. "
-        "Reagiere auf den unmittelbar letzten Beitrag und treibe die Handlung mit einer neuen Entscheidung voran."
+        f"Szene {scene}, Fokusfigur {character.name}. Nur {character.name} handelt oder spricht. "
+        "Reagiere auf den unmittelbar letzten Beitrag und treibe die Handlung mit einer neuen Entscheidung voran. "
+        "Schreibe 5 bis 8 Sätze und 100 bis 160 Wörter."
     )
     messages = [{"role": "system", "content": system}, {"role": "user", "content": turn_instruction}]
     text = ""
@@ -364,7 +367,7 @@ Regeln:
     for attempt in range(3):
         response = await get_lm_studio_client().chat_completion(
             messages, model=character.model_name or session["model_name"],
-            temperature=0.68 + attempt * 0.08, max_tokens=150,
+            temperature=0.68 + attempt * 0.06, max_tokens=420,
         )
         text = response["choices"][0]["message"]["content"].strip()
         text = re.sub(r"^(?:Erzählerin|Mara|Elias)\s*[:.\-—]\s*", "", text, flags=re.IGNORECASE)
@@ -380,10 +383,10 @@ Regeln:
             (is_narrator and bool(re.search(r"\b(?:ich|mich|mein(?:e[rmns]?)?|mir|wir|uns)\b", text, re.IGNORECASE)))
             or (not is_narrator and bool(re.search(r"^Erzählerin\b", text, re.IGNORECASE)))
         )
-        if 18 <= len(words) <= 65 and similarity < 0.52 and not repeated_quote and not wrong_role:
+        if 85 <= len(words) <= 180 and similarity < 0.52 and not repeated_quote and not wrong_role:
             break
         messages.append({"role": "assistant", "content": text})
-        messages.append({"role": "user", "content": "/no_think\nZu ähnlich oder sprachlich fehlerhaft. Schreibe einen völlig neuen nächsten Handlungsschritt ohne bekannte Sätze oder Dialoge zu wiederholen."})
+        messages.append({"role": "user", "content": "Zu ähnlich, zu kurz oder sprachlich fehlerhaft. Schreibe eine völlig neue, zusammenhängende Passage mit 5 bis 8 Sätzen und 100 bis 160 Wörtern, ohne bekannte Sätze oder Dialoge zu wiederholen."})
     if progress_queue is not None:
         preview = {
             "speaker_id": character.id, "speaker_name": character.name,
