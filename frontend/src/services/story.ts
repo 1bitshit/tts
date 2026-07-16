@@ -47,6 +47,10 @@ export async function createStory(payload: object, apiKey: string): Promise<Stor
   return json(await fetch(`${BASE()}/create`, { method: 'POST', headers: getHeaders(apiKey), body: JSON.stringify(payload) }));
 }
 
+export async function generateStoryIdea(payload: object, apiKey: string): Promise<{ title: string; premise: string; genre: string }> {
+  return json(await fetch(`${BASE()}/idea`, { method: 'POST', headers: getHeaders(apiKey), body: JSON.stringify(payload) }));
+}
+
 export async function listStories(apiKey: string) {
   return json<Array<{ session_id: string; title: string; status: string; message_count: number; updated_at: string }>>(
     await fetch(BASE(), { headers: getHeaders(apiKey, '') }),

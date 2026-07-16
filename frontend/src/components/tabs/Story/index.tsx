@@ -22,6 +22,7 @@ export function StoryTab() {
   const [story, setStory] = useState<StoryState | null>(null);
   const [saved, setSaved] = useState<Array<{ session_id: string; title: string; status: string; message_count: number; updated_at: string }>>([]);
   const [busy, setBusy] = useState(false);
+  const [ideaBusy, setIdeaBusy] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const streamRef = useRef<AbortController | null>(null);
@@ -209,6 +210,20 @@ export function StoryTab() {
     finally { setBusy(false); }
   };
 
+  const generateIdea = async () => {
+    setIdeaBusy(true);
+    try {
+      const idea = await storyApi.generateStoryIdea({
+        genre, character_count: characterCount, character_gender: characterGender,
+        narrator_gender: narratorGender, model_name: model,
+      }, apiKey);
+      setTitle(idea.title);
+      setPremise(idea.premise);
+      toast.showToast('Neue Story-Idee wurde erzeugt', 'success');
+    } catch (error) { toast.showToast((error as Error).message, 'error'); }
+    finally { setIdeaBusy(false); }
+  };
+
   const start = async () => {
     if (!story) return;
     setIsGenerating(true);
@@ -268,6 +283,9 @@ export function StoryTab() {
         </select>
       </div>
       <p className="mt-sm text-xs text-text-muted">Ein Band wird als vollständiges Manuskript für ungefähr 23 Minuten Hörzeit vorbereitet.</p>
+      {!story && <div className="mt-md">
+        <Button variant="secondary" onClick={generateIdea} isLoading={ideaBusy}>✨ Titel & Geschichte mit KI generieren</Button>
+      </div>}
       <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Story-Modell">
         <option value="Qwen/Qwen3-4B-Instruct-2507-GGUF">Qwen3-4B-Instruct-2507 (empfohlen, getestet)</option>
         <option value="Qwen/Qwen3-1.7B-GGUF">Qwen/Qwen3-1.7B-GGUF (klein, eingeschränkte Qualität)</option>

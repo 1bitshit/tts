@@ -56,6 +56,14 @@ class CreateStoryRequest(BaseModel):
     delivery_mode: str = Field(default="live", pattern="^(live|prerecorded)$")
 
 
+class GenerateStoryIdeaRequest(BaseModel):
+    genre: str = Field(..., min_length=1, max_length=80)
+    character_count: int = Field(default=2, ge=1, le=6)
+    character_gender: str = Field(default="mixed", pattern="^(female|male|mixed)$")
+    narrator_gender: str = Field(default="female", pattern="^(female|male)$")
+    model_name: str = "Qwen/Qwen3-4B-Instruct-2507-GGUF"
+
+
 class StoryMessage(BaseModel):
     speaker_id: str
     speaker_name: str
@@ -168,6 +176,49 @@ def _restore(session_id: str) -> dict | None:
     _sessions[session_id] = raw
     _queues[session_id] = asyncio.Queue()
     return raw
+
+
+@router.post("/idea")
+async def generate_story_idea(req: GenerateStoryIdeaRequest, _=Depends(verify_api_key)):
+    """Generate an editable German title and premise from the user's fixed selections."""
+    gender_label = {
+        "female": "weiblich",
+        "male": "männlich",
+        "mixed": "gemischt",
+    }[req.character_gender]
+    response = await get_lm_studio_client().chat_completion(
+        [{
+            "role": "system",
+            "content": (
+                "Du entwickelst originelle deutschsprachige Hörspielserien. Antworte ausschließlich "
+                "als gültiges JSON-Objekt mit den Schlüsseln title und premise. Der Titel ist kurz und "
+                "prägnant. Die Prämisse umfasst 2 bis 4 konkrete Sätze, nennt Ausgangslage, Hauptkonflikt "
+                "und ein langfristiges Geheimnis. Keine Markdown-Zeichen und keine bekannten Marken oder Figuren."
+            ),
+        }, {
+            "role": "user",
+            "content": (
+                f"Erstelle eine neue Idee im Genre {req.genre}. Es gibt {req.character_count} feste Figuren; "
+                f"ihre Stimmen sind {gender_label}. Die Erzählstimme ist "
+                f"{'weiblich' if req.narrator_gender == 'female' else 'männlich'}. "
+                "Die Handlung muss zehn fortlaufende Bände mit je ungefähr 23 Minuten tragen können."
+            ),
+        }],
+        model=req.model_name,
+        temperature=0.9,
+        max_tokens=320,
+    )
+    content = response["choices"][0]["message"]["content"].strip()
+    content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.IGNORECASE)
+    try:
+        idea = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(502, "Das Modell lieferte keine gültige Story-Idee. Bitte erneut versuchen.") from exc
+    title = str(idea.get("title", "")).strip()
+    premise = str(idea.get("premise", "")).strip()
+    if not title or not premise:
+        raise HTTPException(502, "Die generierte Story-Idee war unvollständig. Bitte erneut versuchen.")
+    return {"title": title, "premise": premise, "genre": req.genre}
 
 
 @router.post("/create")
