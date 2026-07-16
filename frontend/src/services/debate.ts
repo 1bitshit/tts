@@ -19,6 +19,16 @@ export async function createDebate(req: CreateDebateRequest, apiKey: string) {
   return resp.json();
 }
 
+export async function generateDebateIdea(category: string, apiKey: string): Promise<{ topic: string; teaser: string; category: string }> {
+  const resp = await fetch(`${BASE()}/idea`, {
+    method: 'POST',
+    headers: getHeaders(apiKey),
+    body: JSON.stringify({ category }),
+  });
+  if (!resp.ok) throw new Error((await resp.json()).detail || 'Failed to generate debate idea');
+  return resp.json();
+}
+
 export async function startDebate(sessionId: string, apiKey: string) {
   const resp = await fetch(`${BASE()}/${sessionId}/start`, {
     method: 'POST',

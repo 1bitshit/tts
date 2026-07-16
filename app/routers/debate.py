@@ -62,6 +62,9 @@ class TickRequest(BaseModel):
 class DownloadModelRequest(BaseModel):
     model_id: str = Field(..., description="HuggingFace model ID to download via LM Studio")
 
+class DebateIdeaRequest(BaseModel):
+    category: str = Field(default="Allgemein", min_length=1, max_length=80)
+
 class DebateMessage(BaseModel):
     speaker_id: str
     speaker_name: str
@@ -302,6 +305,31 @@ async def _create_speaker_voice_prompt(speaker: SpeakerConfig) -> str:
         return ""
 
 # ── Endpoints ───────────────────────────────────────────────────────
+
+@router.post("/idea")
+async def generate_debate_idea(req: DebateIdeaRequest, _=Depends(verify_api_key)):
+    response = await story_chat_completion(
+        "author",
+        [{"role": "system", "content": (
+            "Du entwickelst zugespitzte, aber faire Themen für eine deutsche Talkshow. "
+            "Antworte ausschließlich als gültiges JSON mit topic und teaser. "
+            "Das Thema muss kontrovers genug für mehrere Positionen sein, aber ohne erfundene Fakten."
+        )}, {"role": "user", "content": f"Erzeuge ein originelles Debattenthema aus der Kategorie {req.category}."}],
+        temperature=0.7,
+        max_tokens=180,
+    )
+    raw = response["choices"][0]["message"]["content"].strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = {"topic": raw.splitlines()[0][:240], "teaser": raw[:500]}
+    await unload_story_models()
+    return {
+        "topic": str(data.get("topic", "")).strip(),
+        "teaser": str(data.get("teaser", "")).strip(),
+        "category": req.category,
+    }
+
 
 @router.post("/create")
 async def create_debate(req: CreateDebateRequest, _=Depends(verify_api_key)):

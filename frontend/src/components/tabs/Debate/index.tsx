@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Play, Square, Plus, Trash2, MessageCircle, Upload, Mic, SkipForward, Music, Loader } from 'lucide-react';
+import { Play, Square, Plus, Trash2, MessageCircle, Upload, Mic, SkipForward, Music, Loader, RotateCcw, Sparkles } from 'lucide-react';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { useAppContext } from '../../../context/AppContext';
@@ -70,6 +70,9 @@ export function DebateTab() {
   const t = useTranslation();
 
   const [topic, setTopic] = useState('');
+  const [category, setCategory] = useState('Politik');
+  const [ideaBusy, setIdeaBusy] = useState(false);
+  const [teaser, setTeaser] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'creating_voices' | 'running' | 'stopped' | 'finished' | 'disconnected'>('idle');
   const [speakers, setSpeakers] = useState<SpeakerConfig[]>(DEFAULT_DEBATE_SPEAKERS);
@@ -103,6 +106,31 @@ export function DebateTab() {
       setTimeout(() => playAudio(last.audio_base64!, id), 300);
     }
   }, [messages, autoPlay]);
+
+  const generateIdea = useCallback(async () => {
+    setIdeaBusy(true);
+    try {
+      const idea = await debateService.generateDebateIdea(category, apiKey);
+      setTopic(idea.topic);
+      setTeaser(idea.teaser);
+      toast.showToast('Debattenthema wurde erzeugt', 'success');
+    } catch (e: any) {
+      toast.showToast(e.message || 'Themenvorschlag fehlgeschlagen', 'error');
+    } finally {
+      setIdeaBusy(false);
+    }
+  }, [category, apiKey, toast]);
+
+  const resetDebate = useCallback(() => {
+    abortController?.abort();
+    setSessionId(null);
+    setMessages([]);
+    setStatus('idle');
+    setProgress({ percent: 0, label: 'Bereit' });
+    setLmConnected(true);
+    setTeaser('');
+    toast.showToast('Debatte zurückgesetzt', 'success');
+  }, [abortController, toast]);
 
   const handleCreate = useCallback(async () => {
     if (!topic.trim()) {
@@ -232,11 +260,16 @@ export function DebateTab() {
       {/* Controls */}
       <Card title={t('debateTitle')} icon={MessageCircle}>
         <div className="space-y-md">
-          <div className="flex gap-sm">
+          <div className="grid md:grid-cols-[180px_1fr_auto] gap-sm">
+            <select value={category} onChange={e => setCategory(e.target.value)} className="px-md py-sm rounded-md bg-bg-surface border border-border-subtle text-text-primary text-sm" disabled={status === 'running'}>
+              {['Politik', 'Sport', 'Entertainment', 'Gesellschaft', 'Technik', 'Wissenschaft', 'Wirtschaft', 'Kultur', 'Alltag', 'Freie Wahl'].map(item => <option key={item} value={item}>{item}</option>)}
+            </select>
             <input type="text" value={topic} onChange={e => setTopic(e.target.value)} placeholder={t('debateTopicPlaceholder')}
-              className="flex-1 px-md py-sm rounded-md bg-bg-surface border border-border-subtle text-text-primary font-mono text-sm focus:outline-none focus:border-accent-cyan"
+              className="px-md py-sm rounded-md bg-bg-surface border border-border-subtle text-text-primary font-mono text-sm focus:outline-none focus:border-accent-cyan"
               disabled={status === 'running'} />
+            <Button variant="secondary" onClick={generateIdea} isLoading={ideaBusy} icon={Sparkles}>KI-Vorschlag</Button>
           </div>
+          {teaser && <p className="text-xs text-text-secondary">{teaser}</p>}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-sm">
             {speakers.map((s, i) => (
               <div key={s.id} className="p-sm rounded-md bg-bg-surface/50 border border-border-subtle relative group">
@@ -281,6 +314,7 @@ export function DebateTab() {
             ) : (
               <Button onClick={handleStop} icon={Square} variant="secondary">{t('debateStop')}</Button>
             )}
+            <Button variant="secondary" onClick={resetDebate} icon={RotateCcw}>Reset</Button>
             {!lmConnected && status === 'running' && <span className="text-xs text-red-400">⚠️ {t('debateLmDisconnected')}</span>}
             {status === 'creating_voices' && <span className="text-xs text-accent-cyan animate-pulse"><Loader size={12} className="inline animate-spin mr-xs" />{t('debateCreatingVoices')}</span>}
 
