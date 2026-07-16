@@ -21,6 +21,12 @@ struct Args {
     listen: SocketAddr,
     #[arg(long, env = "C_TTS_UPSTREAM", default_value = "http://127.0.0.1:8020")]
     upstream: String,
+    #[arg(long, env = "RUST_TTS_CONNECT_TIMEOUT_SECONDS", default_value_t = 5)]
+    connect_timeout_seconds: u64,
+    #[arg(long, env = "RUST_TTS_REQUEST_TIMEOUT_SECONDS", default_value_t = 600)]
+    request_timeout_seconds: u64,
+    #[arg(long, env = "RUST_TTS_MAX_CONCURRENT", default_value_t = 1)]
+    max_concurrent: usize,
 }
 
 struct AppState {
@@ -33,7 +39,12 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let args = Args::parse();
-    let backend = ReferenceBackend::new(args.upstream, std::time::Duration::from_secs(600))?;
+    let backend = ReferenceBackend::new(
+        args.upstream,
+        std::time::Duration::from_secs(args.connect_timeout_seconds),
+        std::time::Duration::from_secs(args.request_timeout_seconds),
+        args.max_concurrent,
+    )?;
     let state = Arc::new(AppState {
         backend: Arc::new(backend),
     });
@@ -53,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
-    tracing::info!(%args.listen, "Rust TTS gateway listening");
+    tracing::info!(%args.listen, max_concurrent = args.max_concurrent, "Rust TTS gateway listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
