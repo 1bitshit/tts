@@ -8,19 +8,37 @@ PID_FILE="$ROOT/.runtime/rust-tts/server.pid"
 LOG_FILE="$ROOT/logs/rust-tts.log"
 BIN="$ROOT/rust-engine/target/release/qwen3-tts-server-rs"
 mkdir -p "$(dirname "$PID_FILE")" "$ROOT/logs"
-running() { [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
+running() {
+  [ -f "$PID_FILE" ] || return 1
+  local pid
+  pid="$(cat "$PID_FILE")"
+  kill -0 "$pid" 2>/dev/null && grep -q 'qwen3-tts-server-rs' "/proc/$pid/cmdline" 2>/dev/null
+}
 build() { (cd "$ROOT/rust-engine" && cargo build --release -p qwen3-tts-server-rs); }
 stop() {
-  if running; then kill -TERM "$(cat "$PID_FILE")" 2>/dev/null || true; fi
+  local pid=""
+  running && pid="$(cat "$PID_FILE")"
+  [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
+  for _ in 1 2 3 4 5; do
+    [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null && break
+    sleep 1
+  done
+  [ -z "$pid" ] || kill -KILL "$pid" 2>/dev/null || true
   local port="${LISTEN##*:}"
-  if command -v fuser >/dev/null 2>&1; then fuser -k "${port}/tcp" >/dev/null 2>&1 || true; fi
-  for _ in 1 2 3 4 5; do running || break; sleep 1; done
-  running && kill -KILL "$(cat "$PID_FILE")" 2>/dev/null || true
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${port}/tcp" >/dev/null 2>&1 || true
+  fi
   rm -f "$PID_FILE"
 }
 start() {
   [ -x "$BIN" ] || build
   if running; then echo "Rust TTS already running (PID $(cat "$PID_FILE"))."; return; fi
+  rm -f "$PID_FILE"
+  local port="${LISTEN##*:}"
+  if command -v fuser >/dev/null 2>&1 && fuser "${port}/tcp" >/dev/null 2>&1; then
+    echo "Port $port is already occupied by another process." >&2
+    return 1
+  fi
   nohup "$BIN" --listen "$LISTEN" --upstream "$UPSTREAM" \
     --max-concurrent "${RUST_TTS_MAX_CONCURRENT:-1}" \
     --connect-timeout-seconds "${RUST_TTS_CONNECT_TIMEOUT_SECONDS:-5}" \
