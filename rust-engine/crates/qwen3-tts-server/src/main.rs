@@ -1,3 +1,4 @@
+mod reference;
 use axum::{
     Json, Router,
     body::Body,
@@ -8,7 +9,8 @@ use axum::{
 };
 use clap::Parser;
 use futures_util::StreamExt;
-use qwen3_tts_core::{SAMPLE_RATE, markup, request::SpeechRequest};
+use qwen3_tts_core::{SAMPLE_RATE, backend::TtsBackend, markup, request::SpeechRequest};
+use reference::ReferenceBackend;
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -22,8 +24,7 @@ struct Args {
 }
 
 struct AppState {
-    client: reqwest::Client,
-    upstream: String,
+    backend: Arc<dyn TtsBackend>,
 }
 
 #[tokio::main]
@@ -32,9 +33,9 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let args = Args::parse();
+    let backend = ReferenceBackend::new(args.upstream, std::time::Duration::from_secs(600))?;
     let state = Arc::new(AppState {
-        client: reqwest::Client::new(),
-        upstream: args.upstream,
+        backend: Arc::new(backend),
     });
     let app = Router::new()
         .route("/v1/health", get(health))
@@ -62,21 +63,18 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn health(State(s): State<Arc<AppState>>) -> (StatusCode, Json<Value>) {
-    match s
-        .client
-        .get(format!("{}/v1/health", s.upstream))
-        .send()
-        .await
-    {
-        Ok(r) if r.status().is_success() => (
-            StatusCode::OK,
-            Json(json!({"status":"ok","engine":"rust-gateway","inference":"c-reference"})),
+    let health = s.backend.health().await;
+    let status = if health.ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(
+            json!({"status": if health.ready {"ok"} else {"unavailable"}, "engine":"rust", "backend":health.name, "detail":health.detail}),
         ),
-        _ => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"status":"unavailable","engine":"rust-gateway"})),
-        ),
-    }
+    )
 }
 async fn capabilities() -> Json<Value> {
     Json(json!({
@@ -97,8 +95,12 @@ async fn inspect_markup(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
     Ok(Json(json!({"spans": markup::parse(&req.text)})))
 }
-async fn speakers(State(s): State<Arc<AppState>>) -> Result<Response, StatusCode> {
-    proxy_json(&s, "/v1/speakers", None).await
+async fn speakers(State(s): State<Arc<AppState>>) -> Result<Json<Value>, (StatusCode, String)> {
+    s.backend
+        .speakers()
+        .await
+        .map(Json)
+        .map_err(internal_bad_gateway)
 }
 async fn tts(
     State(s): State<Arc<AppState>>,
@@ -106,9 +108,16 @@ async fn tts(
 ) -> Result<Response, (StatusCode, String)> {
     req.validate()
         .map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
-    proxy_json(&s, "/v1/tts", Some(req))
+    let bytes = s
+        .backend
+        .synthesize(&req)
         .await
-        .map_err(|e| (e, "upstream failed".into()))
+        .map_err(internal_bad_gateway)?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "audio/wav")
+        .body(Body::from(bytes))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 async fn tts_stream(
     State(s): State<Arc<AppState>>,
@@ -116,45 +125,21 @@ async fn tts_stream(
 ) -> Result<Response, (StatusCode, String)> {
     req.validate()
         .map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
-    let upstream = s
-        .client
-        .post(format!("{}/v1/tts/stream", s.upstream))
-        .json(&req)
-        .send()
+    let stream = s
+        .backend
+        .stream(&req)
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
-    let status = upstream.status();
-    let stream = upstream
-        .bytes_stream()
-        .map(|result| result.map_err(std::io::Error::other));
+        .map_err(internal_bad_gateway)?
+        .map(|r| r.map_err(std::io::Error::other));
     Response::builder()
-        .status(status)
+        .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "audio/L16;rate=24000;channels=1")
+        .header("X-Audio-Format", "s16le")
+        .header("X-Sample-Rate", SAMPLE_RATE.to_string())
         .body(Body::from_stream(stream))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
-async fn proxy_json(
-    s: &AppState,
-    path: &str,
-    req: Option<SpeechRequest>,
-) -> Result<Response, StatusCode> {
-    let builder = if let Some(req) = req {
-        s.client.post(format!("{}{}", s.upstream, path)).json(&req)
-    } else {
-        s.client.get(format!("{}{}", s.upstream, path))
-    };
-    let upstream = builder.send().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let status = upstream.status();
-    let content_type = upstream.headers().get(header::CONTENT_TYPE).cloned();
-    let bytes = upstream
-        .bytes()
-        .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let mut response = Response::builder().status(status);
-    if let Some(value) = content_type {
-        response = response.header(header::CONTENT_TYPE, value);
-    }
-    response
-        .body(Body::from(bytes))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+fn internal_bad_gateway(error: anyhow::Error) -> (StatusCode, String) {
+    tracing::error!(%error, "TTS backend request failed");
+    (StatusCode::BAD_GATEWAY, error.to_string())
 }

@@ -9,9 +9,11 @@ license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1"
+async-trait = "0.1"
 axum = "0.8"
 bytes = "1"
 clap = { version = "4", features = ["derive", "env"] }
+futures-core = "0.3"
 futures-util = "0.3"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }

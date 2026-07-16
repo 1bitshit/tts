@@ -8,3 +8,8 @@ license.workspace = true
 regex.workspace = true
 serde.workspace = true
 
+anyhow.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+futures-core.workspace = true
+serde_json.workspace = true
