@@ -10,7 +10,7 @@ import { QuickInstructions } from './QuickInstructions';
 import { useAppContext } from '../../../context/AppContext';
 import { useToast } from '../../../context/ToastContext';
 import { useTranslation } from '../../../i18n/I18nContext';
-import { generateCustomVoice } from '../../../services/api';
+import { generateCustomVoice, streamEngineSpeech } from '../../../services/api';
 import { base64ToBlob } from '../../../utils/audio';
 
 export function CustomVoiceTab() {
@@ -24,6 +24,10 @@ export function CustomVoiceTab() {
   const [speed, setSpeed] = useState(1.0);
   const [emotion, setEmotion] = useState('dramatic');
   const [volume, setVolume] = useState(1.0);
+  const [deliveryMode, setDeliveryMode] = useState<'wav' | 'stream'>('wav');
+  const [temperature, setTemperature] = useState(1.1);
+  const [topP, setTopP] = useState(1.0);
+  const [repPenalty, setRepPenalty] = useState(1.08);
 
   const handleGenerate = async () => {
     if (!text.trim()) {
@@ -40,6 +44,30 @@ export function CustomVoiceTab() {
     const startTime = performance.now();
 
     try {
+      if (deliveryMode === 'stream') {
+        const context = new AudioContext({ sampleRate: 24000 });
+        let nextStart = context.currentTime + 0.08;
+        await streamEngineSpeech({
+          text, language, speaker: selectedSpeaker, instruct: instruct || undefined,
+          speed, emotion, volume, temperature, top_p: topP, rep_penalty: repPenalty,
+        }, apiKey, (chunk) => {
+          const sampleCount = Math.floor(chunk.byteLength / 2);
+          if (!sampleCount) return;
+          const audioBuffer = context.createBuffer(1, sampleCount, 24000);
+          const channel = audioBuffer.getChannelData(0);
+          const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+          for (let i = 0; i < sampleCount; i += 1) channel[i] = view.getInt16(i * 2, true) / 32768;
+          const source = context.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(context.destination);
+          nextStart = Math.max(nextStart, context.currentTime + 0.03);
+          source.start(nextStart);
+          nextStart += audioBuffer.duration;
+        });
+        setCustomVoiceAudio({ ...customVoiceAudio, isLoading: false });
+        showToast('Live-Streaming abgeschlossen', 'success');
+        return;
+      }
       const { data, headers } = await generateCustomVoice(
         {
           text,
@@ -49,6 +77,9 @@ export function CustomVoiceTab() {
           speed,
           emotion,
           volume,
+          temperature,
+          top_p: topP,
+          rep_penalty: repPenalty,
           response_format: 'base64',
         },
         apiKey
@@ -137,6 +168,22 @@ export function CustomVoiceTab() {
           </FormSelect>
           <div className="mb-lg" />
           <RangeSlider label="Lautstärke" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} min={0} max={2} step={0.05} formatValue={(value) => `${Math.round(value * 100)}%`} />
+          <div className="mb-lg" />
+          <FormSelect label="Ausgabe" value={deliveryMode} onChange={(e) => setDeliveryMode(e.target.value as 'wav' | 'stream')}>
+            <option value="wav">WAV – vollständig, Tempo exakt</option>
+            <option value="stream">Live PCM – Ton während der Erzeugung</option>
+          </FormSelect>
+          <div className="mt-md p-md rounded bg-bg-surface border border-border-subtle text-xs text-text-muted">
+            Native Tags im Text: [calm], [fear], [joy], [pause:500ms], [laugh], [sigh]
+          </div>
+          <details className="mt-md p-md rounded bg-bg-surface border border-border-subtle">
+            <summary className="cursor-pointer text-sm text-accent-cyan">Erweiterte Engine-Einstellungen</summary>
+            <div className="space-y-md mt-md">
+              <RangeSlider label="Temperatur" value={temperature} onChange={(e) => setTemperature(parseFloat(e.target.value))} min={0} max={2} step={0.05} formatValue={(value) => value.toFixed(2)} />
+              <RangeSlider label="Top P" value={topP} onChange={(e) => setTopP(parseFloat(e.target.value))} min={0.1} max={1} step={0.05} formatValue={(value) => value.toFixed(2)} />
+              <RangeSlider label="Wiederholungsstrafe" value={repPenalty} onChange={(e) => setRepPenalty(parseFloat(e.target.value))} min={0.5} max={2} step={0.05} formatValue={(value) => value.toFixed(2)} />
+            </div>
+          </details>
 
           <Button
             variant="primary"

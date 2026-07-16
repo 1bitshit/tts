@@ -103,6 +103,43 @@ export async function generateCustomVoice(
   return { data, headers: response.headers };
 }
 
+export async function streamEngineSpeech(
+  request: GenerateCustomVoiceRequest,
+  apiKey: string,
+  onChunk: (chunk: Uint8Array) => void,
+): Promise<void> {
+  const response = await fetch(`${CONFIG.baseUrl}/api/v1/engine/speech/stream`, {
+    method: 'POST',
+    headers: getHeaders(apiKey),
+    body: JSON.stringify({
+      text: request.text, language: request.language, speaker: request.speaker,
+      instruct: request.instruct, emotion: request.emotion, rate: request.speed,
+      volume: request.volume, temperature: request.temperature,
+      top_k: request.top_k, top_p: request.top_p, rep_penalty: request.rep_penalty,
+      seed: request.seed,
+    }),
+  });
+  if (!response.ok || !response.body) {
+    let detail = 'C-TTS stream failed';
+    try { detail = (await response.json()).detail || detail; } catch { /* non-JSON upstream error */ }
+    throw new Error(detail);
+  }
+  const reader = response.body.getReader();
+  let carry: Uint8Array | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value?.length) continue;
+    let chunk = value;
+    if (carry) {
+      const joined = new Uint8Array(carry.length + value.length);
+      joined.set(carry); joined.set(value, carry.length); chunk = joined; carry = null;
+    }
+    if (chunk.length % 2) { carry = chunk.slice(-1); chunk = chunk.slice(0, -1); }
+    if (chunk.length) onChunk(chunk);
+  }
+}
+
 /**
  * Generate voice design speech
  */
