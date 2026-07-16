@@ -18,7 +18,7 @@ from app.routers.debate import _tts_speech
 from app.models.manager import get_voice_clone_prompt, model_manager, store_voice_clone_prompt
 from app.routers.archive import save_story_to_archive
 from app.services.lm_studio import get_lm_studio_client
-from app.services.c_tts import stable_preset
+from app.services.c_tts import is_healthy as c_tts_is_healthy, stable_preset
 from app.services.session_store import (
     add_memory,
     list_sessions,
@@ -476,8 +476,9 @@ async def _story_loop(session_id: str):
 
 
 async def _prepare_all_voices(session: dict, queue: asyncio.Queue) -> None:
+    c_engine_ready = settings.tts_engine == "c-server" and await c_tts_is_healthy()
     for character in session["characters"]:
-        if settings.tts_engine == "c-server":
+        if c_engine_ready:
             character.engine_voice = character.engine_voice or stable_preset(
                 character.voice_description,
                 female="frau" in character.voice_description.lower(),

@@ -4,6 +4,7 @@ import hashlib
 import re
 
 import httpx
+from typing import AsyncIterator, Any
 
 from app.config import settings
 
@@ -55,24 +56,60 @@ async def synthesize(
     language: str = "German",
     rate: float = 1.0,
     pause_ms: int = 350,
+    emotion: str | None = None,
+    instruct: str | None = None,
+    volume: float = 1.0,
+    temperature: float = 1.1,
+    top_k: int = 50,
+    top_p: float = 1.0,
+    rep_penalty: float = 1.08,
+    seed: int | None = None,
 ) -> bytes:
     payload = {
         "text": to_c_markup(text, pause_ms=pause_ms),
         "speaker": speaker,
         "language": "German" if language.lower() in {"auto", "german", "de", "deutsch"} else language,
         "rate": rate,
-        "temperature": 1.1,
-        "rep_penalty": 1.08,
+        "temperature": temperature,
+        "top_k": top_k,
+        "top_p": top_p,
+        "rep_penalty": rep_penalty,
+        "volume": volume,
         # Stable per passage, but not the same acoustic sampling trajectory for
         # every paragraph. This avoids a mechanical repeated cadence.
-        "seed": int.from_bytes(
+        "seed": seed if seed is not None else int.from_bytes(
             hashlib.sha256(f"{speaker}\0{text}".encode("utf-8")).digest()[:4], "big"
         ),
     }
+    if emotion:
+        payload["emotion"] = emotion
+    if instruct:
+        payload["instruct"] = instruct
     async with httpx.AsyncClient(timeout=settings.c_tts_timeout_seconds) as client:
         response = await client.post(f"{settings.c_tts_url.rstrip('/')}/v1/tts", json=payload)
         response.raise_for_status()
         return response.content
+
+
+async def stream_synthesize(payload: dict[str, Any]) -> AsyncIterator[bytes]:
+    """Proxy the engine's real chunked 24-kHz signed-16 PCM stream."""
+    payload = dict(payload)
+    payload["text"] = to_c_markup(payload["text"], pause_ms=int(payload.pop("pause_ms", 350)))
+    if payload.get("language", "").lower() in {"auto", "german", "de", "deutsch"}:
+        payload["language"] = "German"
+    async with httpx.AsyncClient(timeout=settings.c_tts_timeout_seconds) as client:
+        async with client.stream("POST", f"{settings.c_tts_url.rstrip('/')}/v1/tts/stream", json=payload) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                if chunk:
+                    yield chunk
+
+
+async def speakers() -> list[dict[str, str]]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(f"{settings.c_tts_url.rstrip('/')}/v1/speakers")
+        response.raise_for_status()
+        return response.json().get("speakers", [])
 
 
 async def is_healthy() -> bool:
