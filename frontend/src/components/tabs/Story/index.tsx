@@ -20,7 +20,14 @@ export function StoryTab() {
   const [saved, setSaved] = useState<Array<{ session_id: string; title: string; status: string; message_count: number; updated_at: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isReplaying, setIsReplaying] = useState(false);
   const streamRef = useRef<AbortController | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const seenAudioRef = useRef(new Set<string>());
+  const replayAudioRef = useRef<HTMLAudioElement | null>(null);
+  const replayCancelledRef = useRef(false);
+  const liveAudioQueueRef = useRef<string[]>([]);
+  const liveAudioRef = useRef<HTMLAudioElement | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   const refreshSaved = async () => {
@@ -29,23 +36,74 @@ export function StoryTab() {
 
   useEffect(() => { void refreshSaved(); }, [apiKey]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [story?.messages]);
-  useEffect(() => () => streamRef.current?.abort(), []);
+  useEffect(() => () => {
+    streamRef.current?.abort();
+    if (pollRef.current !== null) window.clearInterval(pollRef.current);
+    replayCancelledRef.current = true;
+    replayAudioRef.current?.pause();
+    liveAudioRef.current?.pause();
+  }, []);
+
+  const playLiveQueue = () => {
+    if (liveAudioRef.current || liveAudioQueueRef.current.length === 0) return;
+    const audio = new Audio(`data:audio/wav;base64,${liveAudioQueueRef.current.shift()}`);
+    liveAudioRef.current = audio;
+    const next = () => { liveAudioRef.current = null; playLiveQueue(); };
+    audio.onended = next;
+    audio.onerror = next;
+    void audio.play().catch(next);
+  };
+
+  const enqueueLiveAudio = (audioBase64: string) => {
+    liveAudioQueueRef.current.push(audioBase64);
+    playLiveQueue();
+  };
+
+  const stopReplay = () => {
+    replayCancelledRef.current = true;
+    replayAudioRef.current?.pause();
+    replayAudioRef.current = null;
+    setIsReplaying(false);
+  };
+
+  const replayFromStart = async () => {
+    if (!story) return;
+    stopReplay();
+    replayCancelledRef.current = false;
+    setIsReplaying(true);
+    const clips = story.messages.flatMap((message) => message.audio_base64 ? [message.audio_base64] : []);
+    for (const clip of clips) {
+      if (replayCancelledRef.current) break;
+      await new Promise<void>((resolve) => {
+        const audio = new Audio(`data:audio/wav;base64,${clip}`);
+        replayAudioRef.current = audio;
+        const done = () => { replayAudioRef.current = null; resolve(); };
+        audio.onended = done;
+        audio.onerror = done;
+        void audio.play().catch(done);
+      });
+    }
+    if (!replayCancelledRef.current) setIsReplaying(false);
+  };
 
   const connectStream = (id: string) => {
     streamRef.current?.abort();
+    if (pollRef.current !== null) window.clearInterval(pollRef.current);
+    seenAudioRef.current = new Set(story?.messages.filter((item) => item.audio_base64).map((item) => `${item.timestamp}:${item.speaker_id}`));
     streamRef.current = storyApi.streamStory(id, (event, data) => {
       if (event === 'status') {
         setStory((current) => current ? { ...current, status: data.status } : current);
         if (['finished', 'stopped', 'disconnected'].includes(data.status)) setIsGenerating(false);
       }
       if (event === 'message') {
+        seenAudioRef.current.add(`${data.timestamp}:${data.speaker_id}`);
         setStory((current) => current ? {
           ...current,
           status: 'running',
           current_scene: Math.max(current.current_scene, data.scene),
           messages: [...current.messages.filter((item) => !(item.speaker_id === data.speaker_id && item.scene === data.scene)), data as StoryMessage],
         } : current);
-        if (deliveryMode === 'live' && data.audio_base64) void new Audio(`data:audio/wav;base64,${data.audio_base64}`).play();
+        if (deliveryMode === 'live' && data.audio_base64 && !replayCancelledRef.current && !isReplaying) enqueueLiveAudio(data.audio_base64);
       }
       if (event === 'text') setStory((current) => current ? {
         ...current,
@@ -61,6 +119,30 @@ export function StoryTab() {
       } : current);
       if (event === 'error') { setIsGenerating(false); toast.showToast(data.message || 'Story-Fehler', 'error'); }
     });
+    // Some reverse TCP tunnels buffer long-lived SSE responses. Polling keeps the
+    // UI and saved audio reliable without changing the normal low-latency stream.
+    pollRef.current = window.setInterval(() => {
+      void storyApi.getStory(id, apiKey).then((fresh) => {
+        const newAudio = fresh.messages.filter((item) => {
+          const key = `${item.timestamp}:${item.speaker_id}`;
+          if (!item.audio_base64 || seenAudioRef.current.has(key)) return false;
+          seenAudioRef.current.add(key);
+          return true;
+        });
+        setStory(fresh);
+        if (newAudio.length > 0) {
+          setProgress({ percent: 100, label: `${newAudio.at(-1)?.speaker_name}: Audio fertig und gespeichert` });
+          if (deliveryMode === 'live' && !isReplaying) newAudio.forEach((item) => enqueueLiveAudio(item.audio_base64!));
+        } else if (fresh.status === 'running') {
+          setProgress((current) => current.percent >= 100 ? { percent: 5, label: 'Nächster Beitrag wird erzeugt' } : current);
+        }
+        if (['finished', 'stopped'].includes(fresh.status)) {
+          setIsGenerating(false);
+          if (pollRef.current !== null) window.clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }).catch(() => { /* next poll retries; SSE may still be healthy */ });
+    }, 1500);
   };
 
   const create = async () => {
@@ -88,6 +170,8 @@ export function StoryTab() {
     if (!story) return;
     await storyApi.stopStory(story.session_id, apiKey);
     streamRef.current?.abort();
+    if (pollRef.current !== null) window.clearInterval(pollRef.current);
+    pollRef.current = null;
     setIsGenerating(false);
     setStory({ ...story, status: 'stopped' });
     await refreshSaved();
@@ -124,7 +208,10 @@ export function StoryTab() {
         {story && story.status !== 'running' && <Button onClick={start} icon={Play}>Weiter erzählen</Button>}
         {story?.status === 'running' && <Button onClick={stop} variant="danger" icon={Square}>Stoppen & speichern</Button>}
         {story && <Button variant="secondary" onClick={() => setStory(null)}>Andere Geschichte</Button>}
+        {story && story.messages.some((message) => message.audio_base64) && !isReplaying && <Button variant="secondary" onClick={replayFromStart} icon={Play}>Von Anfang hören</Button>}
+        {isReplaying && <Button variant="danger" onClick={stopReplay} icon={Square}>Wiedergabe stoppen</Button>}
       </div>
+      {story && <p className="mt-sm text-xs text-text-muted">{story.messages.filter((message) => message.audio_base64).length} Audioclips gespeichert · Live-Audio wird vollständig vorproduziert und bleibt wiederholbar.</p>}
     </Card>
 
     {!story && <Card title="Gespeicherte Geschichten">
