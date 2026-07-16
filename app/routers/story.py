@@ -229,12 +229,12 @@ async def _story_loop(session_id: str):
             total_turns = session["max_scenes"] * len(characters)
             completed_turns = session["current_scene"] * len(characters) + index
             await queue.put({"event": "progress", "data": {
-                "percent": max(1, round(completed_turns / total_turns * 100)),
+                "percent": 10,
                 "label": f"Text für {character.name} wird erzeugt",
             }})
             message = await _generate_turn(session, character, scene, queue)
             await queue.put({"event": "progress", "data": {
-                "percent": max(1, round((completed_turns + 0.8) / total_turns * 100)),
+                "percent": 90,
                 "label": f"Stimme für {character.name} ist fertig",
             }})
             session["messages"].append(StoryMessage(**message))
@@ -245,7 +245,7 @@ async def _story_loop(session_id: str):
             session["updated_at"] = datetime.now(timezone.utc).isoformat()
             save_session("story", session)
             await queue.put({"event": "progress", "data": {
-                "percent": round((completed_turns + 1) / total_turns * 100),
+                "percent": 100,
                 "label": "Story gespeichert",
             }})
             await queue.put({"event": "message", "data": message})
@@ -306,7 +306,7 @@ Regeln:
 - Erfinde pro Beitrag eine neue konkrete Entwicklung.
 - Wiederhole weder Formulierungen noch bereits erzählte Ereignisse aus den RAG-Erinnerungen.
 - Verrate nicht den gesamten Plot und beende die Geschichte nicht vorzeitig.
-- 1 bis 3 kurze Absätze, vollständig auf Deutsch.
+- 1 bis 2 kurze Sätze mit insgesamt höchstens 45 Wörtern, vollständig auf Deutsch.
 - Jede Runde enthält eine greifbare Handlung, zum Beispiel Kaffee kochen, etwas suchen, essen, aufräumen, arbeiten, streiten oder einen Raum verlassen.
 - Erzählerin beschreibt nur in dritter Person; Figuren handeln und sprechen aus ihrer eigenen Perspektive.
 - Nutze sparsam TTS-Emotions-Tags wie (calm), (tense), (whispering), (excited)."""
@@ -314,25 +314,31 @@ Regeln:
     for item in recent:
         messages.append({"role": "user", "content": f"{item.speaker_name}: {item.text}"})
     turn_instruction = (
-        f"/no_think\nSzene {scene}. Schreibe exakt 2 bis 4 kurze Erzählsätze in der dritten Person. "
+        f"/no_think\nSzene {scene}. Schreibe exakt 1 bis 2 kurze Erzählsätze in der dritten Person, maximal 45 Wörter. "
         "Beginne den ersten Satz mit 'Mara'. Nutze keines der Wörter Ich, mich, mein oder wir. "
         "Beschreibe nur beobachtbare Sims-artige Handlungen und deren direkte Folge. "
         "Stilbeispiel: 'Mara kocht den letzten Kaffee. Elias öffnet den leeren Schrank und seufzt.'"
         if is_narrator else
         f"/no_think\nSzene {scene}. {character.name} ist an der Reihe. Beginne mit einer konkreten "
-        f"Handlung von {character.name}, danach darf kurzer natürlicher Dialog folgen. Fahre ohne Wiederholung fort."
+        f"Handlung von {character.name}, danach darf ein sehr kurzer natürlicher Dialog folgen. Maximal 45 Wörter."
     )
     messages.append({"role": "user", "content": turn_instruction})
     response = await get_lm_studio_client().chat_completion(
         messages,
         model=character.model_name or session["model_name"],
         temperature=0.92,
-        max_tokens=700,
+        max_tokens=180,
     )
     text = response["choices"][0]["message"]["content"].strip()
     if progress_queue is not None:
+        preview = {
+            "speaker_id": character.id, "speaker_name": character.name,
+            "text": text, "audio_base64": None,
+            "timestamp": datetime.now(timezone.utc).isoformat(), "scene": scene,
+        }
+        await progress_queue.put({"event": "text", "data": preview})
         await progress_queue.put({"event": "progress", "data": {
-            "percent": max(1, round((session["current_scene"] * len(session["characters"]) + session["current_character_index"] + 0.35) / (session["max_scenes"] * len(session["characters"])) * 100)),
+            "percent": 45,
             "label": f"Text für {character.name} fertig · Stimme wird erzeugt",
         }})
     audio = await _tts_speech(text, character.voice_description, character.language)

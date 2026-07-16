@@ -66,7 +66,7 @@ export async function stopStory(id: string, apiKey: string) {
 export function streamStory(id: string, onEvent: (event: string, data: any) => void): AbortController {
   const controller = new AbortController();
   const stream = new EventSource(`${BASE()}/${id}/stream`);
-  for (const event of ['status', 'turn', 'message', 'progress', 'error']) {
+  for (const event of ['status', 'turn', 'text', 'message', 'progress', 'error']) {
     stream.addEventListener(event, (message) => onEvent(event, JSON.parse((message as MessageEvent).data)));
   }
   stream.onerror = () => { stream.close(); onEvent('status', { status: 'disconnected' }); };

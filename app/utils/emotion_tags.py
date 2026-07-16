@@ -145,11 +145,18 @@ def generate_with_emotion_tags(
     """
     sr = kwargs.get("sr", 24000)
 
+    def normalize(result: tuple) -> Tuple[np.ndarray, int]:
+        audio, sample_rate = result
+        if isinstance(audio, (list, tuple)):
+            arrays = [np.asarray(item).squeeze() for item in audio if np.asarray(item).size]
+            audio = np.concatenate(arrays) if len(arrays) > 1 else arrays[0]
+        audio = np.asarray(audio, dtype=np.float32).squeeze()
+        if audio.ndim != 1:
+            raise ValueError(f"TTS returned unsupported audio shape {audio.shape}")
+        return audio, int(sample_rate)
+
     if not has_emotion_tags(text):
-        full_instruct = base_instruct
-        if full_instruct:
-            full_instruct = f"{base_instruct}. {full_instruct}"
-        return generate_func(full_instruct, text, **kwargs)
+        return normalize(generate_func(base_instruct, text, **kwargs))
 
     segments = parse_emotion_tags(text)
     all_audio = []
@@ -164,7 +171,7 @@ def generate_with_emotion_tags(
             continue
 
         try:
-            audio, segment_sr = generate_func(combined, seg_text, **kwargs)
+            audio, segment_sr = normalize(generate_func(combined, seg_text, **kwargs))
             if segment_sr != sr:
                 import librosa
                 audio = librosa.resample(audio, orig_sr=segment_sr, target_sr=sr)
@@ -179,7 +186,7 @@ def generate_with_emotion_tags(
             continue
 
     if not all_audio:
-        return generate_func(base_instruct, strip_emotion_tags(text), **kwargs)
+        return normalize(generate_func(base_instruct, strip_emotion_tags(text), **kwargs))
 
     result = np.concatenate(all_audio)
     return result, sr

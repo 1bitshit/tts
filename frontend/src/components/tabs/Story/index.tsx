@@ -43,10 +43,14 @@ export function StoryTab() {
           ...current,
           status: 'running',
           current_scene: Math.max(current.current_scene, data.scene),
-          messages: [...current.messages.filter((item) => !item.text.startsWith('[Schreibt')), data as StoryMessage],
+          messages: [...current.messages.filter((item) => !(item.speaker_id === data.speaker_id && item.scene === data.scene)), data as StoryMessage],
         } : current);
         if (deliveryMode === 'live' && data.audio_base64) void new Audio(`data:audio/wav;base64,${data.audio_base64}`).play();
       }
+      if (event === 'text') setStory((current) => current ? {
+        ...current,
+        messages: [...current.messages.filter((item) => !(item.speaker_id === data.speaker_id && item.scene === data.scene)), data as StoryMessage],
+      } : current);
       if (event === 'progress') setProgress({ percent: data.percent, label: data.label });
       if (event === 'turn') setStory((current) => current ? {
         ...current,
