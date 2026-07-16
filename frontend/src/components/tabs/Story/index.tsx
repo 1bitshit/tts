@@ -34,6 +34,7 @@ export function StoryTab() {
   const queuedAudioKeysRef = useRef(new Set<string>());
   const liveAudioRef = useRef<HTMLAudioElement | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const volumeLabel = (volume = 1) => `1.${Math.max(0, volume - 1)}`;
 
   const refreshSaved = async () => {
     try { setSaved(await storyApi.listStories(apiKey)); } catch { /* API key may not be set yet */ }
@@ -199,6 +200,7 @@ export function StoryTab() {
         title, premise, genre, model_name: model, max_scenes: 100,
         delivery_mode: deliveryMode, narrator_gender: narratorGender,
         character_gender: characterGender, character_count: characterCount,
+        band_minutes: 23,
       }, apiKey);
       setStory(created);
       await refreshSaved();
@@ -265,6 +267,7 @@ export function StoryTab() {
           {[1, 2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count} {count === 1 ? 'Figur' : 'Figuren'}</option>)}
         </select>
       </div>
+      <p className="mt-sm text-xs text-text-muted">Ein Band wird als vollständiges Manuskript für ungefähr 23 Minuten Hörzeit vorbereitet.</p>
       <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Story-Modell">
         <option value="Qwen/Qwen3-4B-Instruct-2507-GGUF">Qwen3-4B-Instruct-2507 (empfohlen, getestet)</option>
         <option value="Qwen/Qwen3-1.7B-GGUF">Qwen/Qwen3-1.7B-GGUF (klein, eingeschränkte Qualität)</option>
@@ -280,7 +283,8 @@ export function StoryTab() {
       </div>}
       <div className="flex gap-sm mt-md flex-wrap">
         {!story && <Button onClick={create} isLoading={busy} icon={Save}>Neue Geschichte</Button>}
-        {story && story.status !== 'running' && <Button onClick={start} icon={Play}>Weiter erzählen</Button>}
+        {story && story.status !== 'running' && (story.volume || 1) < 10 && <Button onClick={start} icon={Play}>{story.status === 'finished' ? `Band ${volumeLabel((story.volume || 1) + 1)} erzeugen` : `Band ${volumeLabel(story.volume)} weiter vertonen`}</Button>}
+        {story?.status === 'finished' && (story.volume || 1) >= 10 && <span className="px-md py-sm text-accent-cyan">Serie mit Band 1.9 abgeschlossen</span>}
         {story?.status === 'running' && <Button onClick={stop} variant="danger" icon={Square}>Stoppen & speichern</Button>}
         {story && <Button variant="secondary" onClick={() => setStory(null)}>Andere Geschichte</Button>}
         {story && story.messages.some((message) => message.audio_base64) && !isReplaying && <Button variant="secondary" onClick={replayFromStart} icon={Play}>Von Anfang hören</Button>}
@@ -299,7 +303,7 @@ export function StoryTab() {
       </div>
     </Card>}
 
-    {story && <Card title={`${story.title} · Szene ${story.current_scene}`}>
+    {story && <Card title={`${story.title} · Band ${volumeLabel(story.volume)} · Szene ${story.current_scene}`}>
       <div className="max-h-[620px] overflow-y-auto space-y-md">
         {story.messages.map((message, index) => <div key={`${message.timestamp}-${index}`} className="p-md rounded bg-bg-surface border-l-2 border-accent-cyan">
           <div className="flex items-center gap-sm text-xs text-accent-cyan mb-xs">

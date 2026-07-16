@@ -50,6 +50,7 @@ class CreateStoryRequest(BaseModel):
     narrator_gender: str = Field(default="female", pattern="^(female|male)$")
     character_gender: str = Field(default="mixed", pattern="^(female|male|mixed)$")
     character_count: int = Field(default=2, ge=1, le=6)
+    band_minutes: int = Field(default=23, ge=5, le=120)
     max_scenes: int = Field(default=100, ge=1, le=1000)
     delay_between_turns: float = Field(default=0.5, ge=0, le=30)
     delivery_mode: str = Field(default="live", pattern="^(live|prerecorded)$")
@@ -114,6 +115,10 @@ _sessions: dict[str, dict] = {}
 _queues: dict[str, asyncio.Queue] = {}
 
 
+def _volume_label(volume: int) -> str:
+    return f"1.{max(0, volume - 1)}"
+
+
 def _normalize_characters(characters: list[StoryCharacter]) -> list[StoryCharacter]:
     """Keep exactly one narrator and preserve every other story character."""
     normalized: list[StoryCharacter] = []
@@ -145,6 +150,19 @@ def _restore(session_id: str) -> dict | None:
         StoryCharacter(**character) for character in raw.get("characters", [])
     ])
     raw["messages"] = [StoryMessage(**message) for message in raw.get("messages", [])]
+    raw.setdefault("volume", 1)
+    raw.setdefault("band_minutes", 23)
+    raw.setdefault("scenes_per_volume", max(3, round(
+        raw["band_minutes"] * 140 / (130 + 35 * max(1, len(raw["characters"]) - 1))
+    )))
+    if "volume_script_ready" not in raw:
+        raw["volume_script_ready"] = bool(raw["messages"])
+    if "narration_index" not in raw:
+        raw["narration_index"] = next(
+            (index for index, message in enumerate(raw["messages"]) if not message.audio_base64),
+            len(raw["messages"]),
+        )
+    raw.setdefault("volume_message_start", 0)
     raw["running_task"] = None
     raw["status"] = "stopped" if raw.get("status") == "running" else raw.get("status", "stopped")
     _sessions[session_id] = raw
@@ -176,6 +194,16 @@ async def create_story(req: CreateStoryRequest, _=Depends(verify_api_key)):
         "status": "idle",
         "current_scene": 0,
         "current_character_index": 0,
+        "volume": 1,
+        # About 140 spoken words/minute. A scene contains one long narrator
+        # passage plus one short passage per character.
+        "band_minutes": req.band_minutes,
+        "scenes_per_volume": max(3, round(
+            req.band_minutes * 140 / (130 + 35 * req.character_count)
+        )),
+        "volume_script_ready": False,
+        "volume_message_start": 0,
+        "narration_index": 0,
         "max_scenes": req.max_scenes,
         "delay_between_turns": req.delay_between_turns,
         "delivery_mode": req.delivery_mode,
@@ -209,6 +237,13 @@ async def start_story(session_id: str, _=Depends(verify_api_key)):
         raise HTTPException(404, "Story not found")
     if session["status"] == "running":
         return {"status": "running", "session_id": session_id}
+    if session.get("status") == "finished" and session.get("volume", 1) >= 10:
+        return {"status": "finished", "session_id": session_id, "series_finished": True}
+    if session.get("status") == "finished" and session.get("volume_script_ready"):
+        session["volume"] = session.get("volume", 1) + 1
+        session["volume_script_ready"] = False
+        session["narration_index"] = len(session.get("messages", []))
+        session["volume_message_start"] = len(session.get("messages", []))
     if not session.get("model_name") or "0.6B" in session["model_name"] or "1.7B" in session["model_name"]:
         session["model_name"] = "Qwen/Qwen3-4B-Instruct-2507-GGUF"
         for character in session.get("characters", []):
@@ -311,53 +346,42 @@ async def _story_loop(session_id: str):
     session = _sessions[session_id]
     queue = _queues[session_id]
     try:
-        while session["status"] == "running" and session["current_scene"] < session["max_scenes"]:
-            characters = session["characters"]
-            index = session["current_character_index"] % len(characters)
-            character = characters[index]
-            scene = session["current_scene"] + 1
-            session["progress"] = {"percent": 5, "label": f"Szene {scene}: {character.name} wird vorbereitet"}
+        if not session.get("volume_script_ready"):
+            # A stop during manuscript generation discards only the incomplete
+            # current draft. Finished earlier volumes and narrated audio remain.
+            draft_start = session.get("volume_message_start", session.get("narration_index", 0))
+            session["messages"] = session["messages"][:draft_start]
+            session["progress"] = {"percent": 3, "label": f"Band {_volume_label(session.get('volume', 1))}: Manuskript und feste Stimmen werden parallel vorbereitet"}
             save_session("story", session)
-            await queue.put({"event": "turn", "data": {
-                "speaker_id": character.id, "speaker_name": character.name, "scene": scene,
-            }})
-            await queue.put({"event": "progress", "data": {
-                "percent": 10,
-                "label": f"Text für {character.name} wird erzeugt",
-            }})
-            if not character.voice_prompt_id or get_voice_clone_prompt(character.voice_prompt_id) is None:
-                session["progress"] = {"percent": 15, "label": f"Feste Stimme für {character.name} wird einmalig vorbereitet"}
-                save_session("story", session)
-                await queue.put({"event": "progress", "data": {
-                    "percent": 15,
-                    "label": f"Feste Stimme für {character.name} wird einmalig vorbereitet",
-                }})
-                await _ensure_story_voice(character)
-                save_session("story", session)
-            message = await _generate_turn(session, character, scene, queue)
-            session["progress"] = {"percent": 90, "label": f"Audio für {character.name} ist fertig"}
+            await queue.put({"event": "progress", "data": session["progress"]})
+            await asyncio.gather(_prepare_all_voices(session, queue), _write_volume(session, queue))
+            session["volume_script_ready"] = True
+            session["narration_index"] = session.get("narration_index", 0)
             save_session("story", session)
-            await queue.put({"event": "progress", "data": {
-                "percent": 90,
-                "label": f"Stimme für {character.name} ist fertig",
-            }})
-            session["messages"].append(StoryMessage(**message))
-            add_memory(session_id, "story", character.name, message["text"])
-            session["current_character_index"] = (index + 1) % len(characters)
-            if session["current_character_index"] == 0:
-                session["current_scene"] = scene
+        else:
+            # In-memory clone prompts disappear on an application restart. The
+            # persisted WAV references rebuild exactly the same voices.
+            await _prepare_all_voices(session, queue)
+
+        while session["status"] == "running" and session["narration_index"] < len(session["messages"]):
+            index = session["narration_index"]
+            message = session["messages"][index]
+            character = next(item for item in session["characters"] if item.id == message.speaker_id)
+            percent = 50 + int(49 * (index + 1) / max(1, len(session["messages"])))
+            session["progress"] = {"percent": percent, "label": f"Band {_volume_label(session.get('volume', 1))}: {character.name} wird vertont"}
+            save_session("story", session)
+            await queue.put({"event": "progress", "data": session["progress"]})
+            message.audio_base64 = await _tts_speech(
+                message.text, character.voice_description, character.language,
+                voice_prompt_id=character.voice_prompt_id,
+            )
+            session["narration_index"] = index + 1
             session["updated_at"] = datetime.now(timezone.utc).isoformat()
             save_session("story", session)
-            session["progress"] = {"percent": 100, "label": f"Szene {scene}: Beitrag gespeichert"}
-            await queue.put({"event": "progress", "data": {
-                "percent": 100,
-                "label": "Story gespeichert",
-            }})
-            await queue.put({"event": "message", "data": message})
-            if session["delay_between_turns"]:
-                await asyncio.sleep(session["delay_between_turns"])
+            await queue.put({"event": "message", "data": message.model_dump()})
         if session["status"] == "running":
             session["status"] = "finished"
+            session["progress"] = {"percent": 100, "label": f"Band {_volume_label(session.get('volume', 1))} ist vollständig geschrieben und vertont"}
             await queue.put({"event": "status", "data": {"status": "finished"}})
     except asyncio.CancelledError:
         session["status"] = "stopped"
@@ -370,6 +394,39 @@ async def _story_loop(session_id: str):
         save_session("story", session)
         save_story_to_archive(session_id, session)
         await queue.put(None)
+
+
+async def _prepare_all_voices(session: dict, queue: asyncio.Queue) -> None:
+    for character in session["characters"]:
+        if character.voice_prompt_id and get_voice_clone_prompt(character.voice_prompt_id) is not None:
+            continue
+        await queue.put({"event": "progress", "data": {
+            "percent": 10, "label": f"Feste Stimme für {character.name} wird einmalig gebaut",
+        }})
+        await _ensure_story_voice(character)
+        save_session("story", session)
+
+
+async def _write_volume(session: dict, queue: asyncio.Queue) -> None:
+    volume = session.get("volume", 1)
+    first_scene = session.get("current_scene", 0) + 1
+    last_scene = first_scene + session.get("scenes_per_volume", 5) - 1
+    session["volume_last_scene"] = last_scene
+    for scene in range(first_scene, last_scene + 1):
+        for character in session["characters"]:
+            if session["status"] != "running":
+                raise asyncio.CancelledError
+            await queue.put({"event": "progress", "data": {
+                "percent": 15 + int(30 * (scene - first_scene + 1) / max(1, last_scene - first_scene + 1)),
+                "label": f"Band {_volume_label(volume)}: Szene {scene} für {character.name} wird geschrieben",
+            }})
+            message = StoryMessage(**await _generate_turn(session, character, scene, queue))
+            session["messages"].append(message)
+            add_memory(session["session_id"], "story", character.name, message.text)
+            save_session("story", session)
+        session["current_scene"] = scene
+    session["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_session("story", session)
 
 
 async def _generate_turn(
@@ -385,6 +442,9 @@ async def _generate_turn(
     )
     memory_block = "\n".join(f"- {memory}" for memory in memories) or "- Noch keine Langzeiterinnerungen."
     is_narrator = character.id == "narrator" or character.role.lower() in {"erzählerin", "erzähler"}
+    volume = session.get("volume", 1)
+    volume_last_scene = session.get("volume_last_scene", scene)
+    is_volume_finale = scene == volume_last_scene and character.id == session["characters"][-1].id
     role_rules = (
         "Die Erzählerin beschreibt alles in der dritten Person. Sie ist niemals selbst Figur, "
         "sagt niemals 'ich' und spricht nicht stellvertretend für Mara oder Elias. Sie schildert "
@@ -425,6 +485,12 @@ Regeln:
 - Erzählerin beschreibt nur in dritter Person; Figuren handeln und sprechen aus ihrer eigenen Perspektive.
 - Gib ausschließlich den neuen Erzähltext aus: keine Sprecherbezeichnung, keine Wortzahl, keine Erklärung.
 - Nutze sparsam TTS-Emotions-Tags wie (calm), (tense), (whispering), (excited)."""
+    if is_volume_finale and volume == 10:
+        system += "\n- Dies ist das vorbereitete Serienfinale in Band 10: Löse den zentralen Konflikt und die wichtigsten Figurenbögen endgültig, emotional und glaubwürdig auf. Kein Cliffhanger."
+    elif is_volume_finale and volume >= 5:
+        system += "\n- Beende diesen Band mit einem starken, konkreten Cliffhanger: eine unumkehrbare Entdeckung, Entscheidung oder unmittelbare Gefahr. Löse ihn noch nicht auf."
+    elif is_volume_finale:
+        system += "\n- Schließe den Hauptkonflikt dieses Bandes glaubwürdig ab, lasse aber einen subtilen neuen Ansatz für die spätere Fortsetzung offen."
     turn_instruction = (
         f"Szene {scene}, Erzählerin. Beschreibe in dritter Person eine längere zusammenhängende Passage. "
         "Greife das letzte konkrete Detail auf, führe es aber zu einer neuen Entdeckung oder Konsequenz. "
@@ -471,21 +537,11 @@ Regeln:
             "timestamp": datetime.now(timezone.utc).isoformat(), "scene": scene,
         }
         await progress_queue.put({"event": "text", "data": preview})
-        await progress_queue.put({"event": "progress", "data": {
-            "percent": 45,
-            "label": f"Text für {character.name} fertig · Stimme wird erzeugt",
-        }})
-    session["progress"] = {"percent": 45, "label": f"Text für {character.name} fertig · Audio wird gerendert"}
-    save_session("story", session)
-    audio = await _tts_speech(
-        text, character.voice_description, character.language,
-        voice_prompt_id=character.voice_prompt_id,
-    )
     return {
         "speaker_id": character.id,
         "speaker_name": character.name,
         "text": text,
-        "audio_base64": audio,
+        "audio_base64": None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "scene": scene,
     }

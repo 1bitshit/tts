@@ -32,6 +32,7 @@ export interface StoryState {
   messages: StoryMessage[];
   status: string;
   current_scene: number;
+  volume?: number;
   max_scenes: number;
   progress?: { percent: number; label: string };
 }
