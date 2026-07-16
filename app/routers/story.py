@@ -613,6 +613,7 @@ Regeln:
         text = response["choices"][0]["message"]["content"].strip()
         text = re.sub(r"^(?:Erzählerin|Mara|Elias)\s*[:.\-—]\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"\s*\(\s*\d+\s+Wörter\s*\)\s*$", "", text, flags=re.IGNORECASE)
+        candidates.append(text)
         tokens = set(re.findall(r"[a-zäöüß]{4,}", text.lower()))
         words = re.findall(r"\b[\wÄÖÜäöüß'-]+\b", text)
         similarity = max((len(tokens & old) / max(1, len(tokens | old)) for old in recent_tokens), default=0)
@@ -639,8 +640,18 @@ Regeln:
         retry_length = "9 bis 14 kurze Sätze und 110 bis 170 Wörter" if is_narrator else "1 bis 3 Sätze und 20 bis 50 Wörter"
         messages.append({"role": "user", "content": f"Der Entwurf klingt wiederholend oder heruntergerasselt. Schreibe eine wirklich neue Passage mit {retry_length}: neue Handlung, neue Bilder, andere Satzanfänge und keine bekannte Sechs-Wort-Folge oder Dialogzeile."})
     ranked = rank_candidates(candidates or [text], [item.text for item in recent], is_narrator)
-    story_context = f"Titel: {session['title']}; Prämisse: {session['premise']}; Genre: {session['genre']}; Band: {volume}; Szene: {scene}"
-    story_context = f"Titel: {session['title']}; Prämisse: {session['premise']}; Genre: {session['genre']}; Band: {volume}; Szene: {scene}"
+    story_context = (
+        f"Titel: {session['title']}; Prämisse: {session['premise']}; "
+        f"Genre: {session['genre']}; Band: {volume}; Szene: {scene}; "
+        f"Sprecher: {character.name} ({character.role})"
+    )
+    text = await edit_and_direct(
+        ranked,
+        [item.text for item in recent],
+        story_context,
+        character.model_name or session["model_name"],
+        is_narrator,
+    )
 
     if progress_queue is not None:
         preview = {
