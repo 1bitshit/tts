@@ -45,6 +45,26 @@ async def _load_role_locked(role: str) -> str:
     return f"story-{role}"
 
 
+async def unload_story_models() -> None:
+    global _ACTIVE_ROLE
+    async with _LOCK:
+        if not settings.story_model_switching:
+            return
+        process = await asyncio.create_subprocess_exec(
+            "bash", str(_SCRIPT), "unload",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            raise RuntimeError(
+                "Story model unload failed: "
+                f"{stderr.decode(errors='replace')[-1200:] or stdout.decode(errors='replace')[-1200:]}"
+            )
+        _ACTIVE_ROLE = None
+        logger.info("Story models unloaded before TTS")
+
+
 async def story_chat_completion(
     role: str,
     messages: list[dict[str, Any]],

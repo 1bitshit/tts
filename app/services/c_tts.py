@@ -1,12 +1,19 @@
 """Client and markup adapter for the pure-C Qwen3-TTS HTTP server."""
 
+import asyncio
 import hashlib
+import logging
 import re
+from pathlib import Path
 
 import httpx
 from typing import AsyncIterator, Any
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
+_ROOT = Path(__file__).resolve().parents[2]
+_RESTART_LOCK = asyncio.Lock()
 
 
 FEMALE_VOICES = ("vivian", "serena", "sohee", "ono_anna")
@@ -31,6 +38,30 @@ def stable_preset(identity: str, female: bool | None = None) -> str:
     pool = FEMALE_VOICES if female else MALE_VOICES
     index = int.from_bytes(hashlib.sha256(identity.encode("utf-8")).digest()[:4], "big") % len(pool)
     return pool[index]
+
+
+async def _run_script(path: str, action: str) -> None:
+    process = await asyncio.create_subprocess_exec(
+        "bash", str(_ROOT / path), action,
+        cwd=_ROOT,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(
+            f"{path} {action} failed: "
+            f"{stderr.decode(errors='replace')[-1200:] or stdout.decode(errors='replace')[-1200:]}"
+        )
+
+
+async def _recover_gpu_tts() -> None:
+    async with _RESTART_LOCK:
+        logger.warning("Recovering GPU TTS runtime after upstream failure")
+        await _run_script("setup/story-models.sh", "unload")
+        await _run_script("setup/tts-engine.sh", "restart")
+        await _run_script("setup/rust-engine.sh", "stop")
+        await _run_script("setup/rust-engine.sh", "start")
 
 
 def to_c_markup(text: str, pause_ms: int = 350) -> str:
@@ -85,8 +116,13 @@ async def synthesize(
         payload["emotion"] = emotion
     if instruct:
         payload["instruct"] = instruct
+    url = f"{settings.c_tts_url.rstrip('/')}/v1/tts"
     async with httpx.AsyncClient(timeout=settings.c_tts_timeout_seconds) as client:
-        response = await client.post(f"{settings.c_tts_url.rstrip('/')}/v1/tts", json=payload)
+        response = await client.post(url, json=payload)
+        if response.status_code == 502:
+            logger.error("Rust TTS returned 502: %s", response.text[:1200])
+            await _recover_gpu_tts()
+            response = await client.post(url, json=payload)
         response.raise_for_status()
         return response.content
 

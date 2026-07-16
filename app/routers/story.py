@@ -19,7 +19,7 @@ from app.models.manager import get_voice_clone_prompt, model_manager, store_voic
 from app.routers.archive import save_story_to_archive
 from app.services.lm_studio import get_lm_studio_client
 from app.services.story_pipeline import edit_and_direct, rank_candidates
-from app.services.story_model_runtime import story_chat_completion
+from app.services.story_model_runtime import story_chat_completion, unload_story_models
 from app.services.c_tts import is_healthy as c_tts_is_healthy, stable_preset
 from app.services.session_store import (
     add_memory,
@@ -418,6 +418,7 @@ async def _story_loop(session_id: str):
                 save_session("story", session)
                 await queue.put({"event": "progress", "data": session["progress"]})
                 await asyncio.gather(_prepare_all_voices(session, queue), _write_volume(session, queue))
+                await unload_story_models()
                 session["volume_script_ready"] = True
                 save_session("story", session)
             else:

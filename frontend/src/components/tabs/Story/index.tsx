@@ -16,7 +16,7 @@ export function StoryTab() {
   const [narratorGender, setNarratorGender] = useState<'female' | 'male'>('female');
   const [characterGender, setCharacterGender] = useState<'female' | 'male' | 'mixed'>('mixed');
   const [characterCount, setCharacterCount] = useState(2);
-  const [model, setModel] = useState('Qwen/Qwen3-4B-Instruct-2507-GGUF');
+  const model = 'story-author';
   const [deliveryMode, setDeliveryMode] = useState<'live' | 'prerecorded'>('live');
   const [progress, setProgress] = useState({ percent: 0, label: 'Bereit' });
   const [story, setStory] = useState<StoryState | null>(null);
@@ -292,11 +292,9 @@ export function StoryTab() {
       {!story && <div className="mt-md">
         <Button variant="secondary" onClick={generateIdea} isLoading={ideaBusy}>✨ Titel & Geschichte mit KI generieren</Button>
       </div>}
-      <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Story-Modell">
-        <option value="Qwen/Qwen3-4B-Instruct-2507-GGUF">Qwen3-4B-Instruct-2507 (empfohlen, getestet)</option>
-        <option value="Qwen/Qwen3-1.7B-GGUF">Qwen/Qwen3-1.7B-GGUF (klein, eingeschränkte Qualität)</option>
-        <option value="Qwen/Qwen3-0.6B-GGUF">Qwen/Qwen3-0.6B-GGUF (experimentell, schwache Langform)</option>
-      </select>
+      <div className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary text-sm">
+        Modellpipeline: Qwen3 14B Autor → Mistral Small 24B Editor → Rust-TTS. Modelle laufen nacheinander vollständig auf der GPU.
+      </div>
       <select value={deliveryMode} onChange={(e) => setDeliveryMode(e.target.value as 'live' | 'prerecorded')} className="w-full mt-md px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" aria-label="Story-Wiedergabemodus">
         <option value="live">Live-Streaming – Beiträge sofort anzeigen und abspielen</option>
         <option value="prerecorded">Vorproduziert – erzeugen und später abspielen</option>

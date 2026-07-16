@@ -41,7 +41,7 @@ load_role() {
   if [ "$1" = "author" ]; then
     gpu="${STORY_AUTHOR_GPU_OFFLOAD:-max}"
   else
-    gpu="${STORY_EDITOR_GPU_OFFLOAD:-0.65}"
+    gpu="${STORY_EDITOR_GPU_OFFLOAD:-max}"
   fi
   "$LMS" unload --all >/dev/null 2>&1 || true
   "$LMS" load "$spec" --identifier "$identifier" --gpu "$gpu" \

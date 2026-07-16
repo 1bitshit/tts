@@ -18,6 +18,7 @@ from app.config import settings
 from app.models.manager import model_manager, store_voice_clone_prompt, get_voice_clone_prompt
 from app.routers.archive import save_debate_to_archive
 from app.services.lm_studio import get_lm_studio_client
+from app.services.story_model_runtime import story_chat_completion, unload_story_models
 from app.services.session_store import add_memory, list_sessions, load_session, retrieve_memories, save_session
 from app.services.c_tts import is_healthy as c_tts_is_healthy, stable_preset, synthesize as synthesize_c_tts
 from app.utils.audio import numpy_to_wav_bytes, apply_speed
@@ -123,6 +124,49 @@ def _default_speakers() -> List[SpeakerConfig]:
     ]
 
 # ── Helpers ─────────────────────────────────────────────────────────
+
+def _moderator_prompt(topic: str, speakers: List[SpeakerConfig], phase: str, recent: str) -> str:
+    names = ", ".join(s.name for s in speakers)
+    return (
+        "Du bist der souveräne Moderator einer deutschen Talkshow im Stil der 1990er Jahre. "
+        "Du hältst das Gespräch lebendig, fair und zugespitzt, ohne selbst Partei zu ergreifen. "
+        f"Thema: {topic}. Gäste: {names}. Phase: {phase}.\n"
+        "Sprich kurz, klar und hörbar moderierend. Stelle konkrete Anschlussfragen, benenne Widersprüche, "
+        "fordere direkte Reaktionen ein und verhindere Wiederholungen. Verwende genau ein passendes "
+        "Emotions-Tag am Anfang, etwa (confident), (serious), (surprised) oder (calm). "
+        "Keine Analyse, kein Markdown, nur der gesprochene Moderationstext.\n"
+        f"Bisheriger Gesprächsstand:\n{recent or 'Noch keine Beiträge.'}"
+    )
+
+
+async def _generate_moderator_message(session: dict, phase: str) -> dict:
+    recent = "\n".join(f"{m.speaker_name}: {m.text}" for m in session["messages"][-6:])
+    response = await story_chat_completion(
+        "author",
+        [{"role": "system", "content": _moderator_prompt(session["topic"], session["speakers"], phase, recent)},
+         {"role": "user", "content": "Führe die Sendung jetzt weiter."}],
+        temperature=0.55,
+        max_tokens=180,
+    )
+    text = response["choices"][0]["message"]["content"].strip()
+    if not has_emotion_tags(text):
+        text = "(confident) " + text
+    await unload_story_models()
+    audio_b64 = await _tts_speech(
+        text,
+        "Eine souveräne, warme deutsche Talkshow-Moderatorenstimme mit klarer Präsenz",
+        "German",
+        speaker="ryan",
+    )
+    return {
+        "speaker_id": "moderator",
+        "speaker_name": "Moderator",
+        "text": text,
+        "audio_base64": audio_b64,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "round": session["current_round"],
+    }
+
 
 def _build_system_prompt(topic: str, speaker: SpeakerConfig, all_speakers: List[SpeakerConfig]) -> str:
     others = [s for s in all_speakers if s.id != speaker.id]
@@ -505,6 +549,12 @@ async def _run_debate_loop(session_id: str):
     session["running_task"] = asyncio.current_task()
 
     try:
+        if not session["messages"]:
+            moderator = await _generate_moderator_message(session, "Eröffnung")
+            session["messages"].append(DebateMessage(**moderator))
+            if q:
+                await q.put({"event": "message", "data": moderator})
+
         while session["status"] == "running":
             round_num = session["current_round"] + 1
             if round_num > session["max_rounds"]:
@@ -568,6 +618,15 @@ async def _run_debate_loop(session_id: str):
                 if session["auto_advance"] and session["delay_between_speakers"] > 0:
                     await asyncio.sleep(session["delay_between_speakers"])
 
+            if session["status"] == "running":
+                phase = "Schlussmoderation" if round_num >= session["max_rounds"] else f"Übergang nach Runde {round_num}"
+                moderator = await _generate_moderator_message(session, phase)
+                session["messages"].append(DebateMessage(**moderator))
+                add_memory(session_id, "debate", "Moderator", moderator["text"])
+                save_session("debate", session)
+                if q:
+                    await q.put({"event": "message", "data": moderator})
+
             session["current_round"] = round_num
 
         if session["status"] == "running":
@@ -624,14 +683,17 @@ async def _generate_speaker_response(session_id: str, speaker: SpeakerConfig) ->
             "content": f"{speaker.name}, du bist dran. Präsentiere dein Argument."
         })
 
-    response = await lm.chat_completion(
-        messages=messages,
-        model=speaker.model_name,
-        temperature=0.8,
-        max_tokens=512,
+    response = await story_chat_completion(
+        "author",
+        messages,
+        temperature=0.72,
+        max_tokens=360,
     )
 
     text = response["choices"][0]["message"]["content"].strip()
+    if not has_emotion_tags(text):
+        text = "(serious) " + text
+    await unload_story_models()
 
     audio_b64 = await _tts_speech(
         text, speaker.voice_description, speaker.language,
