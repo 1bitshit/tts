@@ -1,0 +1,14 @@
+/home/workspace/work/alpha/qwen-tts-server/rust-engine/target/debug/deps/serde-46bfadc7b9d3169e.d: /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/workspace/work/alpha/qwen-tts-server/rust-engine/target/debug/build/serde-037cb4c169da85ec/out/private.rs
+
+/home/workspace/work/alpha/qwen-tts-server/rust-engine/target/debug/deps/libserde-46bfadc7b9d3169e.rlib: /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/workspace/work/alpha/qwen-tts-server/rust-engine/target/debug/build/serde-037cb4c169da85ec/out/private.rs
+
+/home/workspace/work/alpha/qwen-tts-server/rust-engine/target/debug/deps/libserde-46bfadc7b9d3169e.rmeta: /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/workspace/work/alpha/qwen-tts-server/rust-engine/target/debug/build/serde-037cb4c169da85ec/out/private.rs
+
+/home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/home/workspace/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/home/workspace/work/alpha/qwen-tts-server/rust-engine/target/debug/build/serde-037cb4c169da85ec/out/private.rs:
+
+# env-dep:OUT_DIR=/home/workspace/work/alpha/qwen-tts-server/rust-engine/target/debug/build/serde-037cb4c169da85ec/out
