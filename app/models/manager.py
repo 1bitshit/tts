@@ -168,7 +168,7 @@ model_manager = ModelManager()
 # Voice clone prompt storage (in-memory with TTL and size limits)
 # In production, consider using Redis or similar
 _PROMPT_MAX_SIZE = 100
-_PROMPT_TTL_SECONDS = 3600  # 1 hour
+_PROMPT_TTL_SECONDS = 86400  # keep story/debate voices stable for a full session day
 _voice_clone_prompts: Dict[str, Dict[str, Any]] = {}
 _prompts_lock = threading.Lock()
 

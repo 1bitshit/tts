@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.auth import verify_api_key
-from app.routers.debate import _tts_speech
+from app.routers.debate import _create_speaker_voice_prompt, _tts_speech
+from app.models.manager import get_voice_clone_prompt
 from app.routers.archive import save_story_to_archive
 from app.services.lm_studio import get_lm_studio_client
 from app.services.session_store import (
@@ -36,6 +37,7 @@ class StoryCharacter(BaseModel):
     voice_description: str
     model_name: str = ""
     language: str = "German"
+    voice_prompt_id: str = ""
 
 
 class CreateStoryRequest(BaseModel):
@@ -233,6 +235,13 @@ async def _story_loop(session_id: str):
                 "percent": 10,
                 "label": f"Text für {character.name} wird erzeugt",
             }})
+            if not character.voice_prompt_id or get_voice_clone_prompt(character.voice_prompt_id) is None:
+                await queue.put({"event": "progress", "data": {
+                    "percent": 15,
+                    "label": f"Feste Stimme für {character.name} wird einmalig vorbereitet",
+                }})
+                character.voice_prompt_id = await _create_speaker_voice_prompt(character)
+                save_session("story", session)
             message = await _generate_turn(session, character, scene, queue)
             await queue.put({"event": "progress", "data": {
                 "percent": 90,
@@ -342,7 +351,10 @@ Regeln:
             "percent": 45,
             "label": f"Text für {character.name} fertig · Stimme wird erzeugt",
         }})
-    audio = await _tts_speech(text, character.voice_description, character.language)
+    audio = await _tts_speech(
+        text, character.voice_description, character.language,
+        voice_prompt_id=character.voice_prompt_id,
+    )
     return {
         "speaker_id": character.id,
         "speaker_name": character.name,
