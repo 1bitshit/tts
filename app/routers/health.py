@@ -45,6 +45,6 @@ async def tts_engine_health_check():
     return {
         "status": "healthy" if healthy else "unavailable",
         "engine": settings.tts_engine,
-        "url": settings.c_tts_url if settings.tts_engine == "c-server" else None,
+        "url": settings.c_tts_url if settings.tts_engine in {"c-server", "rust-server"} else None,
         "app_version": __version__,
     }

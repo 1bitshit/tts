@@ -36,8 +36,8 @@ class Settings(BaseSettings):
 
     # Pure-C Qwen3-TTS sidecar. Python/PyTorch remains available only as an
     # explicit fallback for development and migration.
-    tts_engine: str = Field(default="c-server", description="c-server or python")
-    c_tts_url: str = Field(default="http://127.0.0.1:8020")
+    tts_engine: str = Field(default="rust-server", description="rust-server, c-server or python")
+    c_tts_url: str = Field(default="http://127.0.0.1:8030")
     c_tts_timeout_seconds: float = Field(default=600.0)
 
     # API Configuration
