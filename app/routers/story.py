@@ -424,9 +424,13 @@ async def _story_loop(session_id: str):
                 session["progress"] = {"percent": percent, "label": f"Band {_volume_label(session.get('volume', 1))}: {character.name} wird vertont"}
                 save_session("story", session)
                 await queue.put({"event": "progress", "data": session["progress"]})
+                is_narrator = character.id == "narrator"
+                tts_text = re.sub(r"([.!?…])\s+", r"\1 (pause) ", message.text)
                 message.audio_base64 = await _tts_speech(
-                    message.text, character.voice_description, character.language,
+                    tts_text, character.voice_description, character.language,
                     voice_prompt_id=character.voice_prompt_id,
+                    speed=0.76 if is_narrator else 0.84,
+                    emotion_gap=0.42 if is_narrator else 0.30,
                 )
                 session["narration_index"] = index + 1
                 session["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -519,7 +523,7 @@ async def _generate_turn(
         "natürlichen Dialog; kontrolliere oder vertone keine andere Figur und nicht die Erzählerin."
     )
     length_rule = (
-        "5 bis 8 natürliche Sätze mit insgesamt 100 bis 160 Wörtern"
+        "9 bis 14 eher kurze, abwechslungsreiche Sätze mit insgesamt 110 bis 170 Wörtern"
         if is_narrator else
         "1 bis 3 natürliche Sätze mit insgesamt 20 bis 50 Wörtern"
     )
@@ -544,12 +548,23 @@ Regeln:
 - Setze exakt bei der letzten Handlung an und verursache eine neue, logische Folge.
 - Pro Beitrag muss sich die Situation verändern oder eine neue Information sichtbar werden.
 - Wiederhole weder Handlung, Dialog noch Formulierungen aus dem bisherigen Verlauf.
+- Fasse den vorherigen Beitrag niemals zusammen und beschreibe dieselbe Handlung nicht aus einer zweiten Perspektive.
+- Schreibe wie eine professionelle Hörbucherzählerin: bildhaft, ruhig, mit wechselndem Satzrhythmus,
+  sinnlichen Einzelheiten und bewussten Spannungsmomenten. Keine stakkatoartige Aufzählung von Handlungen.
+- Jeder neue Absatz braucht ein anderes konkretes Ziel, Hindernis und Ergebnis als die bisherigen Absätze.
 - Verrate nicht den gesamten Plot und beende die Geschichte nicht vorzeitig.
 - {length_rule}, vollständig auf Deutsch.
 - Schreibe eine vollständige, gehaltvolle Passage mit Handlung, Wahrnehmung und einer neuen Konsequenz.
 - Erzählerin beschreibt nur in dritter Person; Figuren handeln und sprechen aus ihrer eigenen Perspektive.
 - Gib ausschließlich den neuen Erzähltext aus: keine Sprecherbezeichnung, keine Wortzahl, keine Erklärung.
-- Nutze sparsam TTS-Emotions-Tags wie (calm), (tense), (whispering), (excited)."""
+- Beginne jeden Beitrag mit genau einem passenden TTS-Emotions-Tag. Erlaubt sind unter anderem
+  (calm), (warm), (thoughtful), (tense), (fearful), (surprised), (sad), (angry),
+  (relieved), (whispering), (excited) und (serious).
+- Verwende für dramatische Gefühle eine deutlich hörbare Intensität von 0.7 bis 0.95, zum Beispiel
+  (fearful:0.85), (angry:0.8), (tense:0.9) oder (relieved:0.75). Starke Gefühle dürfen nicht neutral klingen.
+- Wechsle die Emotion nur bei einem echten Stimmungsumschwung und setze den neuen Tag direkt vor
+  den betreffenden Satz. Verwende ausdrucksstarke Interpunktion und natürliche Sprechpausen.
+- Die Emotion muss aus der konkreten Situation entstehen; nicht dauerhaft neutral oder ruhig sprechen."""
     if is_volume_finale and volume == 10:
         system += "\n- Dies ist das vorbereitete Serienfinale in Band 10: Löse den zentralen Konflikt und die wichtigsten Figurenbögen endgültig, emotional und glaubwürdig auf. Kein Cliffhanger."
     elif is_volume_finale and volume >= 5:
@@ -559,7 +574,7 @@ Regeln:
     turn_instruction = (
         f"Szene {scene}, Erzählerin. Beschreibe in dritter Person eine längere zusammenhängende Passage. "
         "Greife das letzte konkrete Detail auf, führe es aber zu einer neuen Entdeckung oder Konsequenz. "
-        "Keine Dialogwiederholung. Schreibe 5 bis 8 Sätze und 100 bis 160 Wörter."
+        "Keine Dialogwiederholung. Erzähle ruhig und atmosphärisch in 9 bis 14 eher kurzen Sätzen und 110 bis 170 Wörtern."
         if is_narrator else
         f"Szene {scene}, Fokusfigur {character.name}. Nur {character.name} handelt oder spricht. "
         "Reagiere auf den unmittelbar letzten Beitrag und treibe die Handlung mit einer neuen Entscheidung voran. "
@@ -570,6 +585,8 @@ Regeln:
     session["progress"] = {"percent": 30, "label": f"Text für {character.name} wird geschrieben"}
     save_session("story", session)
     recent_tokens = [set(re.findall(r"[a-zäöüß]{4,}", item.text.lower())) for item in recent[-6:]]
+    previous_words = re.findall(r"[a-zäöüß]+", " ".join(item.text.lower() for item in recent[-14:]))
+    previous_ngrams = {tuple(previous_words[i:i + 6]) for i in range(max(0, len(previous_words) - 5))}
     for attempt in range(3):
         response = await get_lm_studio_client().chat_completion(
             messages, model=character.model_name or session["model_name"],
@@ -589,12 +606,19 @@ Regeln:
             (is_narrator and bool(re.search(r"\b(?:ich|mich|mein(?:e[rmns]?)?|mir|wir|uns)\b", text, re.IGNORECASE)))
             or (not is_narrator and bool(re.search(r"^Erzählerin\b", text, re.IGNORECASE)))
         )
+        candidate_words = re.findall(r"[a-zäöüß]+", text.lower())
+        repeats_phrase = any(
+            tuple(candidate_words[i:i + 6]) in previous_ngrams
+            for i in range(max(0, len(candidate_words) - 5))
+        )
+        sentence_count = len(re.findall(r"[.!?…](?:\s|$)", text))
         min_words, max_words = (85, 180) if is_narrator else (15, 60)
-        if min_words <= len(words) <= max_words and similarity < 0.52 and not repeated_quote and not wrong_role:
+        enough_sentences = sentence_count >= 7 if is_narrator else sentence_count >= 1
+        if min_words <= len(words) <= max_words and enough_sentences and similarity < 0.45 and not repeats_phrase and not repeated_quote and not wrong_role:
             break
         messages.append({"role": "assistant", "content": text})
-        retry_length = "5 bis 8 Sätze und 100 bis 160 Wörter" if is_narrator else "1 bis 3 Sätze und 20 bis 50 Wörter"
-        messages.append({"role": "user", "content": f"Zu ähnlich, zu kurz oder sprachlich fehlerhaft. Schreibe neu mit {retry_length}, ohne bekannte Sätze oder Dialoge zu wiederholen."})
+        retry_length = "9 bis 14 kurze Sätze und 110 bis 170 Wörter" if is_narrator else "1 bis 3 Sätze und 20 bis 50 Wörter"
+        messages.append({"role": "user", "content": f"Der Entwurf klingt wiederholend oder heruntergerasselt. Schreibe eine wirklich neue Passage mit {retry_length}: neue Handlung, neue Bilder, andere Satzanfänge und keine bekannte Sechs-Wort-Folge oder Dialogzeile."})
     if progress_queue is not None:
         preview = {
             "speaker_id": character.id, "speaker_name": character.name,

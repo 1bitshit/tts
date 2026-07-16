@@ -148,6 +148,8 @@ def _build_system_prompt(topic: str, speaker: SpeakerConfig, all_speakers: List[
 async def _tts_speech(
     text: str, voice_desc: str, language: str,
     voice_prompt_id: str = "",
+    speed: float = 1.0,
+    emotion_gap: float = 0.15,
 ) -> Optional[str]:
     try:
         if voice_prompt_id:
@@ -172,12 +174,14 @@ async def _tts_speech(
 
                 return generate_with_emotion_tags(
                     text=text, generate_func=_generate, base_instruct=voice_desc, sr=24000,
+                    gap_seconds=emotion_gap,
                 )
 
             audio, sr = await asyncio.to_thread(_render_clone)
         else:
             return await _tts_speech_design(text, voice_desc, language)
 
+        audio = apply_speed(audio, sr, speed)
         import base64, io, soundfile as sf
         buf = io.BytesIO()
         sf.write(buf, audio, sr, format="wav")

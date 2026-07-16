@@ -144,6 +144,7 @@ def generate_with_emotion_tags(
         (concatenated_audio, sample_rate)
     """
     sr = kwargs.get("sr", 24000)
+    gap_seconds = float(kwargs.pop("gap_seconds", 0.15))
 
     def normalize(result: tuple) -> Tuple[np.ndarray, int]:
         audio, sample_rate = result
@@ -178,7 +179,7 @@ def generate_with_emotion_tags(
             all_audio.append(audio)
             total_samples += len(audio)
             # Add small gap between segments
-            gap = np.zeros(int(sr * 0.15), dtype=audio.dtype)
+            gap = np.zeros(int(sr * gap_seconds), dtype=audio.dtype)
             all_audio.append(gap)
             total_samples += len(gap)
         except Exception as e:
