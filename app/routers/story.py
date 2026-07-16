@@ -13,10 +13,12 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.auth import verify_api_key
+from app.config import settings
 from app.routers.debate import _tts_speech
 from app.models.manager import get_voice_clone_prompt, model_manager, store_voice_clone_prompt
 from app.routers.archive import save_story_to_archive
 from app.services.lm_studio import get_lm_studio_client
+from app.services.c_tts import stable_preset
 from app.services.session_store import (
     add_memory,
     list_sessions,
@@ -39,6 +41,7 @@ class StoryCharacter(BaseModel):
     language: str = "German"
     voice_prompt_id: str = ""
     voice_reference_audio: str = ""
+    engine_voice: str = ""
 
 
 class CreateStoryRequest(BaseModel):
@@ -98,6 +101,7 @@ def _generated_characters(narrator_gender: str, character_gender: str, count: in
             if narrator_gender == "female" else
             "Warme deutsche Männerstimme, ruhig, bildhaft und kinoreif"
         ),
+        engine_voice="vivian" if narrator_gender == "female" else "ryan",
     )
     characters = [narrator]
     for index in range(count):
@@ -114,6 +118,11 @@ def _generated_characters(narrator_gender: str, character_gender: str, count: in
                 "Natürliche deutsche Frauenstimme, klar, eigenständig und emotional"
                 if gender == "female" else
                 "Natürliche deutsche Männerstimme, klar, eigenständig und emotional"
+            ),
+            engine_voice=(
+                ("serena", "sohee", "ono_anna")[index % 3]
+                if gender == "female" else
+                ("aiden", "eric", "dylan", "uncle_fu")[index % 4]
             ),
         ))
     return characters
@@ -431,6 +440,7 @@ async def _story_loop(session_id: str):
                     voice_prompt_id=character.voice_prompt_id,
                     speed=0.76 if is_narrator else 0.84,
                     emotion_gap=0.42 if is_narrator else 0.30,
+                    speaker=character.engine_voice,
                 )
                 session["narration_index"] = index + 1
                 session["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -467,6 +477,12 @@ async def _story_loop(session_id: str):
 
 async def _prepare_all_voices(session: dict, queue: asyncio.Queue) -> None:
     for character in session["characters"]:
+        if settings.tts_engine == "c-server":
+            character.engine_voice = character.engine_voice or stable_preset(
+                character.voice_description,
+                female="frau" in character.voice_description.lower(),
+            )
+            continue
         if character.voice_prompt_id and get_voice_clone_prompt(character.voice_prompt_id) is not None:
             continue
         await queue.put({"event": "progress", "data": {

@@ -304,7 +304,16 @@ if [ "$SETUP_MODE" = true ]; then
         fi
     fi
     echo "✅ Dependencies installed"
+    if [ "${TTS_ENGINE:-c-server}" = "c-server" ]; then
+        echo "🔊 Installing pure-C Qwen3-TTS engine and 1.7B model..."
+        bash "$SCRIPT_DIR/setup/tts-engine.sh" install
+    fi
     echo ""
+fi
+
+if [ "${TTS_ENGINE:-c-server}" = "c-server" ]; then
+    echo "🔊 Starting pure-C Qwen3-TTS engine..."
+    bash "$SCRIPT_DIR/setup/tts-engine.sh" start
 fi
 
 # ==============================================================================

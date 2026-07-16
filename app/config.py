@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     model_dtype: str = Field(default="bfloat16", description="Model dtype (float16, bfloat16, float32)")
     use_flash_attention: bool = Field(default=True, description="Use Flash Attention 2")
 
+    # Pure-C Qwen3-TTS sidecar. Python/PyTorch remains available only as an
+    # explicit fallback for development and migration.
+    tts_engine: str = Field(default="c-server", description="c-server or python")
+    c_tts_url: str = Field(default="http://127.0.0.1:8020")
+    c_tts_timeout_seconds: float = Field(default=600.0)
+
     # API Configuration
     api_keys: str = Field(
         default="",

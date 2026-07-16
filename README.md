@@ -1,5 +1,26 @@
 # Qwen3-TTS API Server
 
+## TTS-Engine
+
+Standardmäßig nutzt der Server die Pure-C-Engine von
+`gabriele-mastrapasqua/qwen3-tts` als lokalen Sidecar. Dadurch stehen native
+Emotions-Tags, pitch-erhaltendes Sprechtempo, feste Preset-Stimmen und CUDA-
+Inference ohne PyTorch im Audio-Pfad zur Verfügung. FastAPI, Story/ debate,
+Archive, Auth und WebUI bleiben unverändert.
+
+```bash
+./setup/tts-engine.sh install
+./setup/tts-engine.sh start
+./setup/tts-engine.sh status
+```
+
+Konfiguration: `TTS_ENGINE=c-server`, `C_TTS_URL=http://127.0.0.1:8020`.
+Nur für einen bewussten Rückfall auf die alte Python-Engine kann
+`TTS_ENGINE=python` gesetzt werden.
+
+Nach einem Update startet `./restart.sh` WebUI, C-TTS und FastAPI neu. Beam,
+SSH und LM Studio bleiben dabei aktiv.
+
 A production-ready FastAPI server for Qwen3-TTS models, supporting CustomVoice (preset speakers), VoiceDesign (natural language voice design), and Base models (voice cloning).
 
 ![Qwen3-TTS Demo Page](docs/images/demo_latest.png)

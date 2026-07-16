@@ -14,10 +14,12 @@ from sse_starlette.sse import EventSourceResponse
 import httpx
 
 from app.auth import verify_api_key
+from app.config import settings
 from app.models.manager import model_manager, store_voice_clone_prompt, get_voice_clone_prompt
 from app.routers.archive import save_debate_to_archive
 from app.services.lm_studio import get_lm_studio_client
 from app.services.session_store import add_memory, list_sessions, load_session, retrieve_memories, save_session
+from app.services.c_tts import stable_preset, synthesize as synthesize_c_tts
 from app.utils.audio import numpy_to_wav_bytes, apply_speed
 from app.utils.emotion_tags import generate_with_emotion_tags, has_emotion_tags, strip_emotion_tags
 from app.utils.metrics import PerformanceTracker
@@ -36,6 +38,7 @@ class SpeakerConfig(BaseModel):
     voice_description: str = "A clear, professional speaking voice"
     language: str = "Auto"
     voice_prompt_id: str = ""  # Created on debate start via Voice Design → Clone pipeline
+    engine_voice: str = ""
 
 class CreateDebateRequest(BaseModel):
     topic: str = Field(..., min_length=1)
@@ -150,8 +153,19 @@ async def _tts_speech(
     voice_prompt_id: str = "",
     speed: float = 1.0,
     emotion_gap: float = 0.15,
+    speaker: str = "",
 ) -> Optional[str]:
     try:
+        if settings.tts_engine == "c-server":
+            import base64
+            audio = await synthesize_c_tts(
+                text,
+                speaker=speaker or stable_preset(voice_desc),
+                language=language,
+                rate=speed,
+                pause_ms=max(100, round(emotion_gap * 1000)),
+            )
+            return base64.b64encode(audio).decode()
         if voice_prompt_id:
             prompt_data = get_voice_clone_prompt(voice_prompt_id)
             if not prompt_data:
@@ -296,14 +310,17 @@ async def start_debate(session_id: str, _=Depends(verify_api_key)):
         session["status"] = "stopped"
         return {"status": "error", "message": "LM Studio not reachable"}
 
-    # Create consistent voice prompts for each speaker (Voice Design → Clone pipeline)
+    # C-engine presets are deterministic and immediately available. The legacy
+    # Python engine still uses the Voice Design → Clone pipeline.
     await q.put({"event": "status", "data": {"status": "creating_voices"}})
     for voice_index, speaker in enumerate(session["speakers"]):
         await q.put({"event": "progress", "data": {
             "percent": round(voice_index / len(session["speakers"]) * 5),
             "label": f"Stimme für {speaker.name} wird vorbereitet",
         }})
-        if not speaker.voice_prompt_id:
+        if settings.tts_engine == "c-server":
+            speaker.engine_voice = speaker.engine_voice or stable_preset(speaker.voice_description)
+        elif not speaker.voice_prompt_id:
             speaker.voice_prompt_id = await _create_speaker_voice_prompt(speaker)
             if speaker.voice_prompt_id:
                 logger.info(f"Created voice prompt {speaker.voice_prompt_id} for {speaker.name}")
@@ -612,7 +629,11 @@ async def _generate_speaker_response(session_id: str, speaker: SpeakerConfig) ->
 
     text = response["choices"][0]["message"]["content"].strip()
 
-    audio_b64 = await _tts_speech(text, speaker.voice_description, speaker.language, voice_prompt_id=speaker.voice_prompt_id)
+    audio_b64 = await _tts_speech(
+        text, speaker.voice_description, speaker.language,
+        voice_prompt_id=speaker.voice_prompt_id,
+        speaker=speaker.engine_voice,
+    )
 
     return {
         "speaker_id": speaker.id,
