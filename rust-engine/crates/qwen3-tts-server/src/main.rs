@@ -4,7 +4,7 @@ use axum::{
     body::Body,
     extract::State,
     http::{StatusCode, header},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use clap::Parser;
@@ -49,7 +49,9 @@ async fn main() -> anyhow::Result<()> {
         backend: Arc::new(backend),
     });
     let app = Router::new()
-        .route("/v1/health", get(health))
+        .route("/v1/health", get(readiness))
+        .route("/health/live", get(liveness))
+        .route("/health/ready", get(readiness))
         .route("/v1/speakers", get(speakers))
         .route("/v1/capabilities", get(capabilities))
         .route("/v1/tts", post(tts))
@@ -73,7 +75,11 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn health(State(s): State<Arc<AppState>>) -> (StatusCode, Json<Value>) {
+async fn liveness() -> Json<Value> {
+    Json(json!({"status":"ok","engine":"rust"}))
+}
+
+async fn readiness(State(s): State<Arc<AppState>>) -> (StatusCode, Json<Value>) {
     let health = s.backend.health().await;
     let status = if health.ready {
         StatusCode::OK
@@ -99,14 +105,11 @@ async fn capabilities() -> Json<Value> {
     }))
 }
 
-async fn inspect_markup(
-    Json(req): Json<SpeechRequest>,
-) -> Result<Json<Value>, (StatusCode, String)> {
-    req.validate()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
+async fn inspect_markup(Json(req): Json<SpeechRequest>) -> Result<Json<Value>, ApiError> {
+    req.validate().map_err(ApiError::bad_request)?;
     Ok(Json(json!({"spans": markup::parse(&req.text)})))
 }
-async fn speakers(State(s): State<Arc<AppState>>) -> Result<Json<Value>, (StatusCode, String)> {
+async fn speakers(State(s): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
     s.backend
         .speakers()
         .await
@@ -116,9 +119,8 @@ async fn speakers(State(s): State<Arc<AppState>>) -> Result<Json<Value>, (Status
 async fn tts(
     State(s): State<Arc<AppState>>,
     Json(req): Json<SpeechRequest>,
-) -> Result<Response, (StatusCode, String)> {
-    req.validate()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
+) -> Result<Response, ApiError> {
+    req.validate().map_err(ApiError::bad_request)?;
     let bytes = s
         .backend
         .synthesize(&req)
@@ -128,14 +130,13 @@ async fn tts(
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "audio/wav")
         .body(Body::from(bytes))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(ApiError::internal)
 }
 async fn tts_stream(
     State(s): State<Arc<AppState>>,
     Json(req): Json<SpeechRequest>,
-) -> Result<Response, (StatusCode, String)> {
-    req.validate()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
+) -> Result<Response, ApiError> {
+    req.validate().map_err(ApiError::bad_request)?;
     let stream = s
         .backend
         .stream(&req)
@@ -148,9 +149,54 @@ async fn tts_stream(
         .header("X-Audio-Format", "s16le")
         .header("X-Sample-Rate", SAMPLE_RATE.to_string())
         .body(Body::from_stream(stream))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(ApiError::internal)
 }
-fn internal_bad_gateway(error: anyhow::Error) -> (StatusCode, String) {
+fn internal_bad_gateway(error: anyhow::Error) -> ApiError {
     tracing::error!(%error, "TTS backend request failed");
-    (StatusCode::BAD_GATEWAY, error.to_string())
+    ApiError::new(
+        StatusCode::BAD_GATEWAY,
+        "backend_unavailable",
+        error.to_string(),
+    )
+}
+
+#[derive(Debug)]
+struct ApiError {
+    status: StatusCode,
+    code: &'static str,
+    message: String,
+}
+
+impl ApiError {
+    fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            code,
+            message: message.into(),
+        }
+    }
+
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, "invalid_request", message)
+    }
+
+    fn internal(error: impl std::fmt::Display) -> Self {
+        Self::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            error.to_string(),
+        )
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (
+            self.status,
+            Json(json!({
+                "error": {"code": self.code, "message": self.message}
+            })),
+        )
+            .into_response()
+    }
 }
