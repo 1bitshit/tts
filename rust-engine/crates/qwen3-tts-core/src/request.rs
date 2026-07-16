@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ResponseFormat {
+    #[default]
+    Wav,
+    Pcm,
+    Base64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeechRequest {
     #[serde(alias = "input")]
@@ -25,6 +34,10 @@ pub struct SpeechRequest {
     pub seed: Option<u32>,
     #[serde(default = "default_chunk_frames")]
     pub chunk_frames: u16,
+    #[serde(default = "default_pause_ms")]
+    pub pause_ms: u32,
+    #[serde(default)]
+    pub response_format: ResponseFormat,
 }
 
 fn default_speaker() -> String {
@@ -48,6 +61,9 @@ fn default_rep_penalty() -> f32 {
 fn default_chunk_frames() -> u16 {
     10
 }
+fn default_pause_ms() -> u32 {
+    350
+}
 
 impl SpeechRequest {
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -65,6 +81,15 @@ impl SpeechRequest {
         }
         if !(2..=250).contains(&self.chunk_frames) {
             return Err("chunk_frames must be 2..250");
+        }
+        if self.pause_ms > 5000 {
+            return Err("pause_ms must be 0..5000");
+        }
+        if !(0.5..=2.0).contains(&self.rate) {
+            return Err("rate must be 0.5..2");
+        }
+        if !(0.0..=3.0).contains(&self.volume) {
+            return Err("volume must be 0..3");
         }
         Ok(())
     }

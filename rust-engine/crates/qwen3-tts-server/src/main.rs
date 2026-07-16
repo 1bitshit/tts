@@ -8,7 +8,7 @@ use axum::{
 };
 use clap::Parser;
 use futures_util::StreamExt;
-use qwen3_tts_core::{SAMPLE_RATE, request::SpeechRequest};
+use qwen3_tts_core::{SAMPLE_RATE, markup, request::SpeechRequest};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -43,6 +43,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/tts", post(tts))
         .route("/v1/audio/speech", post(tts))
         .route("/v1/tts/stream", post(tts_stream))
+        .route("/api/v1/engine/speech", post(tts))
+        .route("/api/v1/engine/speech/stream", post(tts_stream))
+        .route("/api/v1/engine/speakers", get(speakers))
+        .route("/api/v1/engine/capabilities", get(capabilities))
+        .route("/api/v1/engine/markup/inspect", post(inspect_markup))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -74,9 +79,23 @@ async fn health(State(s): State<Arc<AppState>>) -> (StatusCode, Json<Value>) {
     }
 }
 async fn capabilities() -> Json<Value> {
-    Json(
-        json!({"sample_rate":SAMPLE_RATE,"native_rust":["api","validation","markup","routing"],"reference_backend":["talker","code-predictor","speech-decoder","cuda"]}),
-    )
+    Json(json!({
+        "engine":"qwen3-tts-rs",
+        "sample_rate":SAMPLE_RATE,
+        "formats":["wav","pcm","base64"],
+        "languages":["German","English","Chinese","Japanese","Korean","French","Russian","Portuguese","Spanish","Italian"],
+        "features":["story","debate","inline-emotions","pauses","laugh","sigh","rate","volume","seed","pcm-streaming","openai-audio-alias"],
+        "native_rust":["api","validation","markup","routing","streaming"],
+        "reference_backend":["talker","code-predictor","speech-decoder","cuda"]
+    }))
+}
+
+async fn inspect_markup(
+    Json(req): Json<SpeechRequest>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    req.validate()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
+    Ok(Json(json!({"spans": markup::parse(&req.text)})))
 }
 async fn speakers(State(s): State<Arc<AppState>>) -> Result<Response, StatusCode> {
     proxy_json(&s, "/v1/speakers", None).await
