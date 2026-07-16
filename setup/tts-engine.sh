@@ -6,6 +6,8 @@ ACTION="${1:-start}"
 ENGINE_HOME="${C_TTS_HOME:-$ROOT/data/c-tts}"
 SOURCE_DIR="$ENGINE_HOME/source"
 MODEL_DIR="${C_TTS_MODEL_DIR:-$ENGINE_HOME/qwen3-tts-1.7b}"
+FALLBACK_BIN="/home/workspace/workspace/server/bkgcode/tts/.refactor/qwen3-tts/qwen_tts"
+FALLBACK_MODEL="/home/workspace/workspace/dump/bkg-qwen3-tts-server/qwen3-tts-1.7b"
 PORT="${C_TTS_PORT:-8020}"
 RUNTIME_DIR="$ROOT/.runtime/c-tts"
 PID_FILE="$RUNTIME_DIR/server.pid"
@@ -88,6 +90,12 @@ stop_engine() {
 }
 
 start_engine() {
+  if [ ! -x "$SOURCE_DIR/qwen_tts" ] && [ -x "$FALLBACK_BIN" ]; then
+    SOURCE_DIR="$(dirname "$FALLBACK_BIN")"
+  fi
+  if [ ! -f "$MODEL_DIR/model.safetensors" ] && [ -f "$FALLBACK_MODEL/model.safetensors" ]; then
+    MODEL_DIR="$FALLBACK_MODEL"
+  fi
   if running; then
     echo "C TTS engine already running (PID $(cat "$PID_FILE"))."
     return
@@ -104,7 +112,7 @@ start_engine() {
   (
     cd "$SOURCE_DIR"
     QWEN_CUDA_FUSED_TALKER=1 QWEN_CUDA_CONVDEC=1 \
-      nohup ./qwen_tts -d "$MODEL_DIR" "${backend[@]}" --serve "$PORT" --workers 1 \
+      nohup ./qwen_tts -d "$MODEL_DIR" "${backend[@]}" --serve "$PORT" --workers 1 --batch-size 1 \
       </dev/null >"$LOG_FILE" 2>&1 &
     echo "$!" > "$PID_FILE"
   )
