@@ -4,6 +4,13 @@ export interface GenerateCustomVoiceRequest {
   speaker: string;
   instruct?: string;
   speed?: number;
+  emotion?: string;
+  volume?: number;
+  temperature?: number;
+  top_k?: number;
+  top_p?: number;
+  rep_penalty?: number;
+  seed?: number;
   response_format?: 'base64' | 'float';
 }
 

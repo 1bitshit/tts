@@ -2,6 +2,8 @@
 CustomVoice API endpoints
 """
 import json
+import asyncio
+import base64
 import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -22,6 +24,7 @@ from app.models.manager import model_manager
 from app.utils.audio import numpy_to_wav_bytes, numpy_to_base64, apply_speed
 from app.utils.streaming import stream_audio_base64_chunks, create_sse_message
 from app.utils.metrics import PerformanceTracker
+from app.services.c_tts import stream_synthesize, synthesize as synthesize_c_tts
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +113,17 @@ async def generate_custom_voice(
     try:
         logger.info(f"Generating custom voice for speaker: {request.speaker}")
 
+        if settings.tts_engine == "c-server":
+            wav_bytes = await synthesize_c_tts(
+                request.text, speaker=request.speaker.lower(), language=request.language,
+                rate=request.speed, emotion=request.emotion, instruct=request.instruct,
+                volume=request.volume, temperature=request.temperature, top_k=request.top_k,
+                top_p=request.top_p, rep_penalty=request.rep_penalty, seed=request.seed,
+            )
+            if request.response_format == "base64":
+                return AudioResponse(audio=base64.b64encode(wav_bytes).decode(), sample_rate=24000, format="wav")
+            return Response(content=wav_bytes, media_type="audio/wav")
+
         # Get model
         model = model_manager.get_custom_voice_model()
 
@@ -176,6 +190,17 @@ async def generate_custom_voice_stream(
 
     try:
         logger.info(f"Generating custom voice stream for speaker: {request.speaker}")
+
+        if settings.tts_engine == "c-server":
+            async def generate_c_stream():
+                yield create_sse_message(json.dumps({"sample_rate": 24000, "format": "s16le"}), "metadata")
+                payload = request.model_dump(exclude={"response_format", "speed"})
+                payload["rate"] = request.speed
+                payload["speaker"] = request.speaker.lower()
+                async for chunk in stream_synthesize({key: value for key, value in payload.items() if value is not None}):
+                    yield create_sse_message(base64.b64encode(chunk).decode(), "audio")
+                yield create_sse_message("complete", "done")
+            return EventSourceResponse(generate_c_stream())
 
         # Get model
         model = model_manager.get_custom_voice_model()
@@ -247,6 +272,26 @@ async def generate_custom_voice_batch(
             raise HTTPException(
                 status_code=400,
                 detail="instructs must have the same length as texts"
+            )
+
+        if request.emotions and len(request.emotions) != len(request.texts):
+            raise HTTPException(status_code=400, detail="emotions must have the same length as texts")
+
+        if settings.tts_engine == "c-server":
+            instructs = request.instructs or [None] * len(request.texts)
+            emotions = request.emotions or [None] * len(request.texts)
+            wavs = await asyncio.gather(*[
+                synthesize_c_tts(
+                    text, speaker=speaker.lower(), language=language, rate=request.speed,
+                    instruct=instruct, emotion=emotion,
+                )
+                for text, language, speaker, instruct, emotion in zip(
+                    request.texts, request.languages, request.speakers, instructs, emotions
+                )
+            ])
+            return BatchAudioResponse(
+                audios=[base64.b64encode(wav).decode() for wav in wavs],
+                sample_rate=24000, format="wav",
             )
 
         # Get model

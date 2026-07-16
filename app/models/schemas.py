@@ -29,6 +29,14 @@ class CustomVoiceRequest(BaseModel):
         le=2.0,
         description="Speech speed multiplier (0.5-2.0, default 1.0)"
     )
+    emotion: Optional[str] = Field(default=None, description="Native C-engine emotion")
+    volume: float = Field(default=1.0, ge=0.0, le=3.0)
+    temperature: float = Field(default=1.1, ge=0.0, le=2.0)
+    top_k: int = Field(default=50, ge=0, le=3072)
+    top_p: float = Field(default=1.0, ge=0.0, le=1.0)
+    rep_penalty: float = Field(default=1.08, ge=0.5, le=2.0)
+    seed: Optional[int] = Field(default=None, ge=0, le=4294967295)
+    chunk_frames: int = Field(default=10, ge=2, le=250)
     response_format: Literal["wav", "base64"] = Field(
         default="wav",
         description="Response format: 'wav' for audio file download, 'base64' for base64 encoded JSON"
@@ -44,6 +52,8 @@ class CustomVoiceBatchRequest(BaseModel):
         default=None,
         description="Optional list of instructions matching texts"
     )
+    emotions: Optional[List[Optional[str]]] = None
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
     response_format: Literal["wav", "base64", "zip"] = Field(
         default="zip",
         description="Response format: 'zip' for multiple files, 'base64' for JSON array"

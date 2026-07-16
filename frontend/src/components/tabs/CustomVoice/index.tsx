@@ -22,6 +22,8 @@ export function CustomVoiceTab() {
   const [language, setLanguage] = useState('English');
   const [instruct, setInstruct] = useState('');
   const [speed, setSpeed] = useState(1.0);
+  const [emotion, setEmotion] = useState('dramatic');
+  const [volume, setVolume] = useState(1.0);
 
   const handleGenerate = async () => {
     if (!text.trim()) {
@@ -45,6 +47,8 @@ export function CustomVoiceTab() {
           speaker: selectedSpeaker,
           instruct: instruct || undefined,
           speed,
+          emotion,
+          volume,
           response_format: 'base64',
         },
         apiKey
@@ -127,6 +131,12 @@ export function CustomVoiceTab() {
             max={2}
             step={0.1}
           />
+          <div className="mb-lg" />
+          <FormSelect label="Emotion (native C-Engine)" value={emotion} onChange={(e) => setEmotion(e.target.value)}>
+            {['neutral','calm','joy','excited','proud','dramatic','sad','gloomy','annoyed','stern','anger','fear','disgust','surprise','contempt','awe','nostalgia','remorse','outrage','despair'].map((value) => <option key={value} value={value}>{value}</option>)}
+          </FormSelect>
+          <div className="mb-lg" />
+          <RangeSlider label="Lautstärke" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} min={0} max={2} step={0.05} formatValue={(value) => `${Math.round(value * 100)}%`} />
 
           <Button
             variant="primary"

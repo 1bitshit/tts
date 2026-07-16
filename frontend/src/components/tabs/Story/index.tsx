@@ -42,7 +42,6 @@ export function StoryTab() {
   };
 
   useEffect(() => { void refreshSaved(); }, [apiKey]);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [story?.messages]);
   useEffect(() => () => {
     streamRef.current?.abort();
     if (pollRef.current !== null) window.clearInterval(pollRef.current);
@@ -253,6 +252,12 @@ export function StoryTab() {
   };
 
   return <div className="space-y-lg">
+    {story?.status === 'running' && <button
+      type="button"
+      onClick={stop}
+      className="fixed right-5 bottom-5 z-50 px-lg py-md rounded-full bg-red-600 hover:bg-red-500 text-white font-semibold shadow-2xl border border-red-300"
+      aria-label="Story sofort stoppen und speichern"
+    >■ Stoppen & speichern</button>}
     <Card title="📖 Fortlaufende Geschichte" icon={BookOpen}>
       <div className="grid md:grid-cols-2 gap-md">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titel" className="px-md py-sm rounded bg-bg-surface border border-border-subtle text-text-primary" />
